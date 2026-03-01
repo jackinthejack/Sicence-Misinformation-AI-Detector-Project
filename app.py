@@ -54,7 +54,7 @@ if "view" not in st.session_state:
     st.session_state.view = "Experiment"
 
 # -----------------------------
-# Claims (No Vaccine Content)
+# Claims (Updated)
 # -----------------------------
 CLAIMS = [
     {"text": "The Earth orbits the Sun.", "answer": "True"},
@@ -265,9 +265,20 @@ elif st.session_state.view == "Live Demo":
 
     if st.button("Analyze"):
         if claim:
-            result = call_ai(claim, "quick" if mode == "Quick Mode" else "reason")
+            selected_mode = "quick" if mode == "Quick Mode" else "reason"
+            result = call_ai(claim, selected_mode)
+
+            st.markdown("### Verdict")
             st.write(badge(result.verdict))
             st.write(f"Confidence: {result.confidence}%")
+            st.write(f"Time: {result.seconds}s")
+
+            if "REASONING:" in result.raw_text:
+                reasoning_section = result.raw_text.split("VERDICT:")[0]
+                st.markdown("### Reasoning Steps")
+                st.text(reasoning_section)
+
+            st.markdown("### Explanation")
             st.write(result.explanation)
 
 # -----------------------------
