@@ -10,13 +10,13 @@ from openai import OpenAI
 # Page Setup
 # -----------------------------
 st.set_page_config(
-    page_title="AI Science Misinformation Detector",
+    page_title="AI Science Misinformation Detector by Jack Eckel",
     page_icon="🧪",
     layout="wide",
 )
 
-st.title("🧪 AI Science Misinformation Detector")
-st.caption("Science Fair Project: Does requiring AI to show reasoning improve misinformation detection accuracy?")
+st.title("🧪 AI Science Misinformation Detector by Jack Eckel")
+st.caption("Science Fair Project by Jack Eckel: Does requiring AI to show reasoning improve misinformation detection accuracy?")
 
 # -----------------------------
 # API Setup
@@ -32,10 +32,8 @@ st.sidebar.header("🔬 Research Settings")
 
 temperature = st.sidebar.slider("Model Temperature", 0.0, 1.0, 0.2)
 max_tokens = st.sidebar.slider("Max Tokens", 200, 1200, 500)
-
 SOFT_LIMIT = st.sidebar.number_input("Soft API Call Limit", 10, 200, 50)
-
-COST_PER_CALL = 0.002  # rough estimate per call
+COST_PER_CALL = 0.002  # estimated cost per call
 
 # -----------------------------
 # Session State
@@ -56,7 +54,7 @@ if "view" not in st.session_state:
     st.session_state.view = "Experiment"
 
 # -----------------------------
-# Claims
+# Claims (No Vaccine Content)
 # -----------------------------
 CLAIMS = [
     {"text": "The Earth orbits the Sun.", "answer": "True"},
@@ -176,7 +174,6 @@ def call_ai(claim, mode):
             st.error("⚠️ API quota exceeded.")
         else:
             st.error(f"Error: {e}")
-
         return AIResult("Uncertain", 0, "Error occurred.", "", 0)
 
 
@@ -253,6 +250,7 @@ if st.session_state.view == "Experiment":
     if st.button("Next Claim"):
         if idx < len(CLAIMS) - 1:
             st.session_state.idx += 1
+            st.rerun()
         else:
             st.success("Experiment complete! View Results.")
 
@@ -273,7 +271,7 @@ elif st.session_state.view == "Live Demo":
             st.write(result.explanation)
 
 # -----------------------------
-# Results
+# Results Dashboard
 # -----------------------------
 else:
     st.subheader("📊 Results Dashboard")
