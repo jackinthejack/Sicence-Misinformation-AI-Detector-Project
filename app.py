@@ -63,11 +63,11 @@ CLAIMS = [
     {"text": "Humans use only 10% of their brains.", "answer": "False"},
     {"text": "Water boils at 100°C at sea level.", "answer": "True"},
     {"text": "Lightning never strikes the same place twice.", "answer": "False"},
-    {"text": "Vaccines cause autism.", "answer": "False"},
+    {"text": "Cracking your knuckles causes arthritis.", "answer": "False"},
     {"text": "Plants use photosynthesis to make food.", "answer": "True"},
     {"text": "The Moon produces its own light.", "answer": "False"},
     {"text": "Sound travels faster in water than in air.", "answer": "True"},
-    {"text": "Antibiotics kill viruses.", "answer": "False"},
+    {"text": "Heavier objects fall faster than lighter objects in a vacuum.", "answer": "False"},
     {"text": "Carbon dioxide is a greenhouse gas.", "answer": "True"},
 ]
 
