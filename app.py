@@ -10,20 +10,29 @@ import streamlit as st
 import matplotlib.pyplot as plt
 from openai import OpenAI
 
-st.set_page_config(page_title="AI Reliability Experiment by Jack Eckel", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="AI Reliability Experiment By Jack Eckel", page_icon="🧪", layout="wide")
 
-st.title("AI Reliability Experiment by Jack Eckel")
-st.caption("Testing whether structured reasoning improves AI fact-checking reliability by Jack Eckel")
+st.title("AI Reliability Experiment By Jack Eckel")
+st.caption("Testing whether structured reasoning improves AI fact-checking reliability")
 
-MODEL="gpt-4o-mini"
-TEMPERATURE=0.2
-MAX_TOKENS=700
+MODEL = "gpt-4o-mini"
+TEMPERATURE = 0.2
+MAX_TOKENS = 700
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ---------------------------------------------------------
-# CLAIM DATASET 1
-# ---------------------------------------------------------
+# ---------------------------------------------------
+# PROFESSIONAL DASHBOARD STYLE (visual upgrade)
+# ---------------------------------------------------
+
+plt.style.use("seaborn-v0_8-whitegrid")
+
+COLOR_QUICK = "#1f77b4"
+COLOR_REASON = "#ff7f0e"
+
+# ---------------------------------------------------
+# CLAIM DATASET
+# ---------------------------------------------------
 
 CLAIMS = [
 {"text":"If Earth stopped rotating but continued orbiting the Sun, we would still have normal day and night cycles.","answer":"False"},
@@ -48,13 +57,13 @@ CLAIMS = [
 {"text":"Glass is a solid.","answer":"Uncertain"},
 ]
 
-# ---------------------------------------------------------
+# ---------------------------------------------------
 # PROMPTS
-# ---------------------------------------------------------
+# ---------------------------------------------------
 
-SYSTEM="You are a careful science fact checker."
+SYSTEM = "You are a careful science fact checker."
 
-QUICK_PROMPT="""
+QUICK_PROMPT = """
 VERDICT: <True|False|Uncertain>
 CONFIDENCE: <0-100>
 EXPLANATION: <short explanation>
@@ -62,10 +71,10 @@ EXPLANATION: <short explanation>
 Claim: "{claim}"
 """
 
-REASON_PROMPT="""
+REASON_PROMPT = """
 REASONING:
-Step 1: Identify scientific principle
-Step 2: Compare with established science
+Step 1: Identify the scientific principle
+Step 2: Compare the claim with known science
 
 VERDICT: <True|False|Uncertain>
 CONFIDENCE: <0-100>
@@ -74,51 +83,48 @@ EXPLANATION: <short explanation>
 Claim: "{claim}"
 """
 
-# ---------------------------------------------------------
+# ---------------------------------------------------
 # DATA STRUCT
-# ---------------------------------------------------------
+# ---------------------------------------------------
 
 @dataclass
 class Result:
-    verdict:str
-    confidence:int
-    explanation:str
-    raw:str
+    verdict: str
+    confidence: int
+    explanation: str
+    raw: str
 
-# ---------------------------------------------------------
+# ---------------------------------------------------
 # SESSION STATE
-# ---------------------------------------------------------
+# ---------------------------------------------------
 
 if "results" not in st.session_state:
-    st.session_state.results={"quick":{}, "reason":{}}
+    st.session_state.results = {"quick": {}, "reason": {}}
 
 if "judge_results" not in st.session_state:
-    st.session_state.judge_results=None
+    st.session_state.judge_results = None
 
-if "idx" not in st.session_state:
-    st.session_state.idx=0
-
-# ---------------------------------------------------------
+# ---------------------------------------------------
 # HELPERS
-# ---------------------------------------------------------
+# ---------------------------------------------------
 
 def parse(txt):
 
-    v=re.search(r"VERDICT:\s*(True|False|Uncertain)",txt)
-    c=re.search(r"CONFIDENCE:\s*(\d+)",txt)
-    e=re.search(r"EXPLANATION:\s*(.*)",txt)
+    v = re.search(r"VERDICT:\s*(True|False|Uncertain)", txt)
+    c = re.search(r"CONFIDENCE:\s*(\d+)", txt)
+    e = re.search(r"EXPLANATION:\s*(.*)", txt)
 
-    verdict=v.group(1) if v else "Uncertain"
-    confidence=int(c.group(1)) if c else 50
-    explanation=e.group(1) if e else ""
+    verdict = v.group(1) if v else "Uncertain"
+    confidence = int(c.group(1)) if c else 50
+    explanation = e.group(1) if e else ""
 
-    return verdict,confidence,explanation
+    return verdict, confidence, explanation
 
-def ask_ai(claim,mode):
+def ask_ai(claim, mode):
 
-    prompt=QUICK_PROMPT if mode=="quick" else REASON_PROMPT
+    prompt = QUICK_PROMPT if mode == "quick" else REASON_PROMPT
 
-    r=client.chat.completions.create(
+    r = client.chat.completions.create(
         model=MODEL,
         temperature=TEMPERATURE,
         max_tokens=MAX_TOKENS,
@@ -128,73 +134,116 @@ def ask_ai(claim,mode):
         ]
     )
 
-    txt=r.choices[0].message.content
+    txt = r.choices[0].message.content
 
-    v,c,e=parse(txt)
+    v,c,e = parse(txt)
 
     return Result(v,c,e,txt)
 
 def majority(results):
-
     votes=[r.verdict for r in results]
     return max(set(votes),key=votes.count)
 
 def consistency(results):
-
     votes=[r.verdict for r in results]
     m=majority(results)
     return votes.count(m)/len(votes)*100
 
 def badge(v):
-
     if v=="True": return "🟢 TRUE"
     if v=="False": return "🔴 FALSE"
     return "🟡 UNCERTAIN"
 
-# ---------------------------------------------------------
+# ---------------------------------------------------
 # NAVIGATION
-# ---------------------------------------------------------
+# ---------------------------------------------------
 
-page=st.radio("",[
-"How This Experiment Works",
-"Experiment",
-"Ask Your Own Question",
-"Results"
-],horizontal=True)
+page = st.radio(
+"",
+["How This Experiment Works","Experiment","Ask Your Own Question","Results"],
+horizontal=True
+)
 
-# =========================================================
-# INSTRUCTIONS
-# =========================================================
+# =====================================================
+# HOW THE EXPERIMENT WORKS
+# =====================================================
 
 if page=="How This Experiment Works":
 
     st.header("How This Experiment Works")
 
+    st.subheader("Project Goal")
+
     st.write("""
-This project compares two AI response styles:
+This experiment tests whether **structured reasoning improves the reliability of AI fact-checking**.
 
-Quick Mode → immediate answer  
-Reasoning Mode → step-by-step reasoning
+Two response styles are compared:
 
-Metrics measured:
+**Quick Mode** – the AI answers immediately.
 
-• Accuracy  
-• Confidence  
-• Consistency  
-• Uncertainty rate
+**Reasoning Mode** – the AI performs step-by-step reasoning before answering.
 """)
 
-# =========================================================
-# EXPERIMENT
-# =========================================================
+    st.subheader("Hypothesis")
+
+    st.write("""
+If the AI performs structured reasoning before answering, then its responses will be:
+
+• More accurate  
+• More consistent across multiple runs  
+• Better calibrated with its confidence
+""")
+
+    st.subheader("Experimental Design")
+
+    st.write("""
+Each scientific claim is tested using both AI response modes.
+
+Claims can optionally be run **three times** to measure answer stability.
+
+Multiple trials allow measurement of **AI reliability and consistency**.
+""")
+
+    st.subheader("Variables")
+
+    st.write("""
+Independent Variable  
+• AI response mode
+
+Dependent Variables  
+• Accuracy  
+• Confidence  
+• Consistency
+
+Controlled Variables  
+• Same model  
+• Same prompts  
+• Same dataset
+""")
+
+    st.subheader("How Judges Can Test the App")
+
+    st.write("""
+1. Click **Run 5 Random Claims (Judge Demo)**  
+2. Compare Quick Mode vs Reasoning Mode  
+3. Open the **Results Dashboard**
+""")
+
+    st.info(
+    "This project demonstrates that reasoning-based AI systems may produce "
+    "more reliable results than immediate responses."
+    )
+
+# =====================================================
+# EXPERIMENT PAGE
+# =====================================================
 
 elif page=="Experiment":
 
     st.header("Experiment")
 
-    multi=st.checkbox("Run each claim 3 times (consistency test)",True)
-
-    runs=3 if multi else 1
+    multi = st.checkbox("Run each claim 3 times (consistency test)", True)
+    runs = 3 if multi else 1
 
     if st.button("Run 5 Random Claims (Judge Demo)"):
 
@@ -202,8 +251,8 @@ elif page=="Experiment":
 
         for i in random.sample(range(20),5):
 
-            claim=CLAIMS[i]["text"]
-            truth=CLAIMS[i]["answer"]
+            claim = CLAIMS[i]["text"]
+            truth = CLAIMS[i]["answer"]
 
             q=[ask_ai(claim,"quick") for _ in range(runs)]
             r=[ask_ai(claim,"reason") for _ in range(runs)]
@@ -211,21 +260,19 @@ elif page=="Experiment":
             st.session_state.results["quick"][i]=q
             st.session_state.results["reason"][i]=r
 
-            results.append((i,claim,truth,q,r))
+            results.append((claim,truth,q,r))
 
         st.session_state.judge_results=results
-
-    # display judge results
 
     if st.session_state.judge_results:
 
         st.subheader("Judge Demo Results")
 
-        for i,claim,truth,q,r in st.session_state.judge_results:
+        for claim,truth,q,r in st.session_state.judge_results:
 
             st.write("###",claim)
 
-            col1,col2=st.columns(2)
+            col1,col2 = st.columns(2)
 
             with col1:
                 st.write("Quick Mode")
@@ -243,20 +290,20 @@ elif page=="Experiment":
 
             st.divider()
 
-# =========================================================
-# ASK QUESTION
-# =========================================================
+# =====================================================
+# ASK YOUR OWN QUESTION
+# =====================================================
 
 elif page=="Ask Your Own Question":
 
-    claim=st.text_input("Enter a science claim")
+    claim = st.text_input("Enter a science claim")
 
     if st.button("Analyze"):
 
         q=ask_ai(claim,"quick")
         r=ask_ai(claim,"reason")
 
-        col1,col2=st.columns(2)
+        col1,col2 = st.columns(2)
 
         with col1:
             st.write("Quick Mode")
@@ -268,9 +315,9 @@ elif page=="Ask Your Own Question":
             st.write(badge(r.verdict),r.confidence)
             st.write(r.explanation)
 
-# =========================================================
-# RESULTS
-# =========================================================
+# =====================================================
+# RESULTS DASHBOARD
+# =====================================================
 
 else:
 
@@ -280,7 +327,7 @@ else:
     shared=set(quick)&set(reason)
 
     if not shared:
-        st.warning("Run experiment first.")
+        st.warning("Run the experiment first.")
         st.stop()
 
     acc_q=0
@@ -309,17 +356,18 @@ else:
 
     st.header("Results Dashboard")
 
-    st.success(f"Reasoning improved accuracy by {round(acc_r-acc_q,1)}%")
+    st.success(
+    f"Reasoning Mode improved accuracy by {round(acc_r-acc_q,1)}%"
+    )
 
-    def chart(title,labels,values):
+    def chart(title,values):
 
         fig,ax=plt.subplots(figsize=(4,3))
 
-        bars=ax.bar(labels,values)
+        bars=ax.bar(["Quick","Reasoning"],values,color=[COLOR_QUICK,COLOR_REASON])
 
-        for bar in bars:
-            h=bar.get_height()
-            ax.text(bar.get_x()+bar.get_width()/2,h,f"{h:.1f}",ha='center')
+        for b in bars:
+            ax.text(b.get_x()+b.get_width()/2,b.get_height(),round(b.get_height(),1),ha='center')
 
         ax.set_title(title)
         ax.spines['top'].set_visible(False)
@@ -330,10 +378,10 @@ else:
     col1,col2=st.columns(2)
 
     with col1:
-        chart("Accuracy",["Quick","Reason"],[acc_q,acc_r])
+        chart("Accuracy",[acc_q,acc_r])
 
     with col2:
-        chart("Consistency",["Quick","Reason"],[
+        chart("Consistency",[
             statistics.mean(cons_q),
             statistics.mean(cons_r)
         ])
