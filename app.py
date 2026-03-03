@@ -1,206 +1,354 @@
 import os
 import re
 import time
+import csv
+from datetime import datetime
 from dataclasses import dataclass
+from math import erfc, sqrt
+
 import streamlit as st
 import matplotlib.pyplot as plt
 from openai import OpenAI
 
-st.set_page_config(page_title="AI Science Misinformation Detector", page_icon="🧪", layout="wide")
+# ---------------------------------------------------
+# PAGE CONFIG
+# ---------------------------------------------------
 
-st.title("🧪 AI Science Misinformation Detector")
-st.caption("Does requiring AI to show reasoning improve misinformation detection accuracy?")
+st.set_page_config(
+    page_title="AI Reliability Experiment",
+    page_icon="🧪",
+    layout="wide"
+)
 
-API_KEY = os.getenv("OPENAI_API_KEY", "")
+st.title("AI Reliability Experiment")
+st.caption("Testing whether structured reasoning improves AI fact-checking reliability")
+
+# ---------------------------------------------------
+# LOCKED MODEL SETTINGS
+# ---------------------------------------------------
+
+MODEL = "gpt-4o-mini"
+TEMPERATURE = 0.2
+MAX_TOKENS = 800
+
+SOFT_CALL_LIMIT = 150
+COST_EST = 0.002
+
+API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=API_KEY) if API_KEY else None
-MODEL_NAME = "gpt-4o-mini"
 
-# ---------------- Sidebar ----------------
-st.sidebar.header("🔬 Research Settings")
-temperature = st.sidebar.slider("Model Temperature", 0.0, 1.0, 0.2)
-max_tokens = st.sidebar.slider("Max Tokens", 200, 1200, 600)
-SOFT_LIMIT = st.sidebar.number_input("Soft API Call Limit", 10, 200, 80)
-COST_PER_CALL = 0.002
+# ---------------------------------------------------
+# DATASET
+# ---------------------------------------------------
 
-# ---------------- Session State ----------------
-if "idx" not in st.session_state:
-    st.session_state.idx = 0
+CLAIMS = [
+{"text":"If Earth stopped rotating but continued orbiting the Sun, we would still have normal day and night cycles.","answer":"False"},
+{"text":"If you double the mass of an object in free fall in a vacuum, it will hit the ground at the same time as a lighter object.","answer":"True"},
+{"text":"Increasing the temperature of a gas in a sealed container increases the pressure.","answer":"True"},
+{"text":"If two objects have the same volume but different masses, they must have the same density.","answer":"False"},
+{"text":"An object moving at constant velocity has no net force acting on it.","answer":"True"},
+{"text":"If a plant is placed in the dark, it immediately stops cellular respiration.","answer":"False"},
+{"text":"In space, a rocket must continuously fire its engines to keep moving forward.","answer":"False"},
+{"text":"If two chemicals react and temperature decreases, the reaction cannot be exothermic.","answer":"True"},
+{"text":"If you increase the speed of a moving object, its kinetic energy increases linearly.","answer":"False"},
+{"text":"A metal object and a wooden object of the same mass will experience the same gravitational force near Earth’s surface.","answer":"True"},
+{"text":"If Earth had no atmosphere, the sky would appear blue during the day.","answer":"False"},
+{"text":"When ice melts, the total mass of the water remains the same.","answer":"True"},
+{"text":"If a chemical reaction absorbs heat from its surroundings, it is exothermic.","answer":"False"},
+{"text":"An object in orbit around Earth is constantly falling toward Earth.","answer":"True"},
+{"text":"If two planets have the same mass but different radii, the one with the smaller radius has stronger surface gravity.","answer":"True"},
+{"text":"If light travels through water instead of air, its wavelength stays exactly the same.","answer":"False"},
+{"text":"A higher pH value means a solution is more acidic.","answer":"False"},
+{"text":"Viruses are considered living organisms.","answer":"Uncertain"},
+{"text":"Pluto is a planet.","answer":"Uncertain"},
+{"text":"Glass is a solid.","answer":"Uncertain"},
+]
+
+# ---------------------------------------------------
+# SESSION STATE
+# ---------------------------------------------------
+
+if "index" not in st.session_state:
+    st.session_state.index = 0
+
 if "results" not in st.session_state:
-    st.session_state.results = {"quick": {}, "reason": {}}
+    st.session_state.results = {"quick":{}, "reason":{}}
+
 if "api_calls" not in st.session_state:
     st.session_state.api_calls = 0
 
-# ---------------- Harder Claims ----------------
-CLAIMS = [
-    {"text": "The Earth orbits the Sun.", "answer": "True"},
-    {"text": "Humans use only 10% of their brains.", "answer": "False"},
-    {"text": "Water boils at exactly 100°C everywhere on Earth.", "answer": "False"},
-    {"text": "Lightning never strikes the same place twice.", "answer": "False"},
-    {"text": "Cracking your knuckles causes arthritis.", "answer": "False"},
-    {"text": "Plants get most of their mass from the soil.", "answer": "False"},
-    {"text": "Sound travels faster in water than in air.", "answer": "True"},
-    {"text": "Heavier objects fall faster than lighter objects in a vacuum.", "answer": "False"},
-    {"text": "The Moon is larger than Pluto.", "answer": "True"},
-    {"text": "Carbon dioxide is the most abundant gas in Earth's atmosphere.", "answer": "False"},
-    {"text": "Seasons are caused by Earth being closer to the Sun in summer.", "answer": "False"},
-    {"text": "A force is required to keep an object moving at constant velocity in space.", "answer": "False"},
-]
+# ---------------------------------------------------
+# EXPERIMENT SETTINGS
+# ---------------------------------------------------
 
-# ---------------- Prompts ----------------
-SYSTEM_PROMPT = "You are a careful science fact-checker for a 6th grade project."
+replicate = st.checkbox(
+"Run each claim 3 times (recommended for stronger data)",
+help="Replication reduces randomness and improves statistical reliability"
+)
+
+# ---------------------------------------------------
+# PROMPTS
+# ---------------------------------------------------
+
+SYSTEM_PROMPT = "You are a careful science fact checker."
 
 QUICK_PROMPT = """
-Respond EXACTLY in this format:
 VERDICT: <True|False|Uncertain>
 CONFIDENCE: <0-100>%
 EXPLANATION: <short explanation>
+
 Claim: "{claim}"
 """
 
 REASON_PROMPT = """
-You MUST think step-by-step before deciding.
-
-Respond EXACTLY in this format:
 REASONING:
-- Break the claim into parts.
-- Identify scientific principles involved.
-- Compare the claim to known evidence.
+Step 1: Identify key science concept
+Step 2: Compare with known science
+
 VERDICT: <True|False|Uncertain>
 CONFIDENCE: <0-100>%
-EXPLANATION: <summary>
+EXPLANATION: <short explanation>
+
 Claim: "{claim}"
 """
 
+# ---------------------------------------------------
+# AI CALL
+# ---------------------------------------------------
+
 @dataclass
 class AIResult:
-    verdict: str
-    confidence: int
-    explanation: str
-    raw_text: str
+    verdict:str
+    confidence:int
+    explanation:str
+    raw:str
 
-def extract(text):
-    v = re.search(r"VERDICT:\s*(True|False|Uncertain)", text, re.I)
-    c = re.search(r"CONFIDENCE:\s*(\d+)", text)
-    e = re.search(r"EXPLANATION:\s*(.+)", text, re.I | re.S)
-    return (
-        v.group(1).capitalize() if v else "Uncertain",
-        int(c.group(1)) if c else 50,
-        e.group(1).strip() if e else ""
-    )
+def parse(text):
 
-def call_ai(claim, mode):
-    if st.session_state.api_calls >= SOFT_LIMIT:
-        st.warning("Soft call limit reached.")
-        return AIResult("Uncertain", 0, "Limit reached.", "")
+    verdict="Uncertain"
+    confidence=50
+    explanation=""
+
+    v=re.search(r"VERDICT:\s*(True|False|Uncertain)",text)
+    if v: verdict=v.group(1)
+
+    c=re.search(r"CONFIDENCE:\s*(\d+)",text)
+    if c: confidence=int(c.group(1))
+
+    e=re.search(r"EXPLANATION:\s*(.*)",text)
+    if e: explanation=e.group(1)
+
+    return verdict,confidence,explanation
+
+def ask_ai(claim,mode):
+
+    if client is None:
+        st.error("API key missing")
+        return AIResult("Uncertain",0,"","")
+
     prompt = QUICK_PROMPT if mode=="quick" else REASON_PROMPT
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role":"system","content":SYSTEM_PROMPT},
-                  {"role":"user","content":prompt.format(claim=claim)}],
-        temperature=temperature,
-        max_tokens=max_tokens,
+
+    resp=client.chat.completions.create(
+        model=MODEL,
+        temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
+        messages=[
+            {"role":"system","content":SYSTEM_PROMPT},
+            {"role":"user","content":prompt.format(claim=claim)}
+        ]
     )
-    st.session_state.api_calls += 1
-    text = response.choices[0].message.content
-    v,c,e = extract(text)
-    return AIResult(v,c,e,text)
 
-def badge(v):
-    return {"True":"🟢 TRUE","False":"🔴 FALSE"}.get(v,"🟡 UNCERTAIN")
+    text=resp.choices[0].message.content
+    verdict,conf,exp=parse(text)
 
-# ---------------- Experiment ----------------
-st.subheader("🔬 Experiment Mode")
+    return AIResult(verdict,conf,exp,text)
 
-idx = st.session_state.idx
-claim = CLAIMS[idx]["text"]
-correct = CLAIMS[idx]["answer"]
+# ---------------------------------------------------
+# NAVIGATION
+# ---------------------------------------------------
 
-progress = (idx+1)/len(CLAIMS)
-st.progress(progress)
+page=st.radio(
+"",
+["Experiment","Ask Your Own Question","Results"],
+horizontal=True
+)
 
-st.info(f"Claim {idx+1}/{len(CLAIMS)}: {claim}")
+# ---------------------------------------------------
+# EXPERIMENT PAGE
+# ---------------------------------------------------
 
-col1, col2 = st.columns(2)
+if page=="Experiment":
 
-if col1.button("Run Quick Mode"):
-    st.session_state.results["quick"][idx] = call_ai(claim,"quick")
+    st.subheader("Experiment")
 
-if col2.button("Run Reasoning Mode"):
-    st.session_state.results["reason"][idx] = call_ai(claim,"reason")
+    claim=CLAIMS[st.session_state.index]["text"]
 
-st.markdown("---")
+    st.progress((st.session_state.index+1)/len(CLAIMS))
 
-for mode in ["quick","reason"]:
-    result = st.session_state.results[mode].get(idx)
-    if result:
-        st.write(f"### {mode.capitalize()} Mode")
-        st.write(badge(result.verdict))
-        st.write(f"Confidence: {result.confidence}%")
-        st.write(f"Correct: {result.verdict==correct}")
-        if "REASONING:" in result.raw_text:
-            st.text(result.raw_text.split("VERDICT:")[0])
-        st.write(result.explanation)
-        st.markdown("---")
+    st.info(f"Claim {st.session_state.index+1}: {claim}")
 
-both_done = idx in st.session_state.results["quick"] and idx in st.session_state.results["reason"]
+    col1,col2=st.columns(2)
 
-if st.button("Next Claim", disabled=not both_done):
-    if idx < len(CLAIMS)-1:
-        st.session_state.idx += 1
-        st.rerun()
+    if col1.button("Run Quick Mode"):
 
-# ---------------- Live Demo ----------------
-st.markdown("## 🌎 Live Demo (Side-by-Side Comparison)")
-demo_claim = st.text_input("Enter a science claim for comparison:")
+        st.session_state.results["quick"][st.session_state.index]=ask_ai(claim,"quick")
 
-if st.button("Analyze Both Modes"):
-    if demo_claim:
-        quick = call_ai(demo_claim,"quick")
-        reason = call_ai(demo_claim,"reason")
+    if col2.button("Run Reasoning Mode"):
 
-        colA, colB = st.columns(2)
+        st.session_state.results["reason"][st.session_state.index]=ask_ai(claim,"reason")
 
-        with colA:
-            st.subheader("Quick Mode")
-            st.write(badge(quick.verdict))
-            st.write(f"Confidence: {quick.confidence}%")
+    if st.button("Next Claim"):
+
+        st.session_state.index+=1
+
+        if st.session_state.index>=len(CLAIMS):
+
+            st.success("Experiment complete. See Results page.")
+
+# ---------------------------------------------------
+# ASK YOUR OWN QUESTION
+# ---------------------------------------------------
+
+elif page=="Ask Your Own Question":
+
+    st.subheader("Ask Your Own Question")
+
+    claim=st.text_input("Enter a science claim")
+
+    if st.button("Analyze"):
+
+        quick=ask_ai(claim,"quick")
+        reason=ask_ai(claim,"reason")
+
+        c1,c2=st.columns(2)
+
+        with c1:
+            st.write("Quick Mode")
+            st.write(quick.verdict)
+            st.write(quick.confidence)
             st.write(quick.explanation)
 
-        with colB:
-            st.subheader("Reasoning Mode")
-            st.write(badge(reason.verdict))
-            st.write(f"Confidence: {reason.confidence}%")
-            if "REASONING:" in reason.raw_text:
-                st.text(reason.raw_text.split("VERDICT:")[0])
+        with c2:
+            st.write("Reasoning Mode")
+            st.write(reason.verdict)
+            st.write(reason.confidence)
             st.write(reason.explanation)
 
-# ---------------- Results ----------------
-st.markdown("## 📊 Results")
+# ---------------------------------------------------
+# RESULTS
+# ---------------------------------------------------
 
-def summarize(mode):
-    results = st.session_state.results[mode]
-    correct = 0
-    confidences = []
-    for i,r in results.items():
-        if r.verdict == CLAIMS[i]["answer"]:
-            correct += 1
-        confidences.append(r.confidence)
-    acc = (correct/len(results)*100) if results else 0
-    avg_conf = sum(confidences)/len(confidences) if confidences else 0
-    return acc, avg_conf
+else:
 
-quick_acc, quick_conf = summarize("quick")
-reason_acc, reason_conf = summarize("reason")
+    st.subheader("Results")
 
-st.write(f"Quick Accuracy: {quick_acc:.1f}%")
-st.write(f"Reasoning Accuracy: {reason_acc:.1f}%")
+    quick=st.session_state.results["quick"]
+    reason=st.session_state.results["reason"]
 
-fig = plt.figure()
-plt.bar(["Quick","Reasoning"],[quick_acc,reason_acc])
-plt.ylabel("Accuracy (%)")
-st.pyplot(fig)
+    if not quick or not reason:
+        st.warning("Run experiment first.")
+        st.stop()
 
-fig2 = plt.figure()
-plt.bar(["Quick","Reasoning"],[quick_conf,reason_conf])
-plt.ylabel("Average Confidence")
-st.pyplot(fig2)
+    acc_q=0
+    acc_r=0
+
+    conf_q=[]
+    conf_r=[]
+
+    for i in quick:
+
+        truth=CLAIMS[i]["answer"]
+
+        if quick[i].verdict==truth:
+            acc_q+=1
+
+        if reason[i].verdict==truth:
+            acc_r+=1
+
+        conf_q.append(quick[i].confidence)
+        conf_r.append(reason[i].confidence)
+
+    acc_q=acc_q/len(quick)*100
+    acc_r=acc_r/len(reason)*100
+
+    avg_q=sum(conf_q)/len(conf_q)
+    avg_r=sum(conf_r)/len(conf_r)
+
+    gap_q=abs(avg_q-acc_q)
+    gap_r=abs(avg_r-acc_r)
+
+    fig,ax=plt.subplots(figsize=(4,3))
+    bars=ax.bar(["Quick","Reason"],[acc_q,acc_r])
+    for b in bars:
+        ax.text(b.get_x()+.25,b.get_height()+1,f"{b.get_height():.1f}")
+    ax.set_title("Accuracy")
+    st.pyplot(fig)
+
+    fig,ax=plt.subplots(figsize=(4,3))
+    ax.bar(["Quick","Reason"],[avg_q,avg_r])
+    ax.set_title("Average Confidence")
+    st.pyplot(fig)
+
+    fig,ax=plt.subplots(figsize=(4,3))
+    ax.bar(["Quick","Reason"],[gap_q,gap_r])
+    ax.set_title("Calibration Gap")
+    st.pyplot(fig)
+
+    st.markdown("### Results Summary")
+
+    st.write(
+    f"Reasoning mode achieved {acc_r:.1f}% accuracy compared to {acc_q:.1f}% in quick mode. "
+    f"Calibration gap was {gap_r:.1f} vs {gap_q:.1f}. "
+    f"This indicates reasoning may improve reliability."
+    )
+
+    # ---------------------------------------------------
+    # CSV EXPORT
+    # ---------------------------------------------------
+
+    rows=[]
+
+    for i in quick:
+
+        rows.append([
+            datetime.now(),
+            CLAIMS[i]["text"],
+            CLAIMS[i]["answer"],
+            quick[i].verdict,
+            quick[i].confidence,
+            reason[i].verdict,
+            reason[i].confidence
+        ])
+
+    csv_file="experiment_results.csv"
+
+    with open(csv_file,"w",newline="") as f:
+
+        writer=csv.writer(f)
+
+        writer.writerow([
+            "timestamp",
+            "claim",
+            "ground_truth",
+            "quick_verdict",
+            "quick_confidence",
+            "reason_verdict",
+            "reason_confidence"
+        ])
+
+        writer.writerows(rows)
+
+    with open(csv_file,"rb") as f:
+
+        st.download_button(
+            "Download Experiment Data (CSV)",
+            f,
+            "results.csv",
+            "text/csv"
+        )
+
+    if st.button("Reset Experiment"):
+
+        st.session_state.index=0
+        st.session_state.results={"quick":{}, "reason":{}}
+        st.rerun()
