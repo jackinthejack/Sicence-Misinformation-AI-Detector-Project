@@ -1,45 +1,29 @@
 import os
 import re
-import time
 import csv
+import random
 from datetime import datetime
 from dataclasses import dataclass
-from math import erfc, sqrt
 
 import streamlit as st
 import matplotlib.pyplot as plt
 from openai import OpenAI
 
-# ---------------------------------------------------
-# PAGE CONFIG
-# ---------------------------------------------------
-
-st.set_page_config(
-    page_title="AI Reliability Experiment",
-    page_icon="🧪",
-    layout="wide"
-)
+st.set_page_config(page_title="AI Reliability Experiment", page_icon="🧪", layout="wide")
 
 st.title("AI Reliability Experiment")
 st.caption("Testing whether structured reasoning improves AI fact-checking reliability")
-
-# ---------------------------------------------------
-# LOCKED MODEL SETTINGS
-# ---------------------------------------------------
 
 MODEL = "gpt-4o-mini"
 TEMPERATURE = 0.2
 MAX_TOKENS = 800
 
-SOFT_CALL_LIMIT = 150
-COST_EST = 0.002
-
 API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=API_KEY) if API_KEY else None
 
-# ---------------------------------------------------
+# --------------------------------------------------
 # DATASET
-# ---------------------------------------------------
+# --------------------------------------------------
 
 CLAIMS = [
 {"text":"If Earth stopped rotating but continued orbiting the Sun, we would still have normal day and night cycles.","answer":"False"},
@@ -64,35 +48,27 @@ CLAIMS = [
 {"text":"Glass is a solid.","answer":"Uncertain"},
 ]
 
-# ---------------------------------------------------
+# --------------------------------------------------
 # SESSION STATE
-# ---------------------------------------------------
-
-if "index" not in st.session_state:
-    st.session_state.index = 0
+# --------------------------------------------------
 
 if "results" not in st.session_state:
-    st.session_state.results = {"quick":{}, "reason":{}}
+    st.session_state.results={"quick":{}, "reason":{}}
 
-if "api_calls" not in st.session_state:
-    st.session_state.api_calls = 0
+# --------------------------------------------------
+# REPRODUCIBILITY SEED
+# --------------------------------------------------
 
-# ---------------------------------------------------
-# EXPERIMENT SETTINGS
-# ---------------------------------------------------
+seed = st.number_input("Random Seed (for reproducibility)", value=42)
+random.seed(seed)
 
-replicate = st.checkbox(
-"Run each claim 3 times (recommended for stronger data)",
-help="Replication reduces randomness and improves statistical reliability"
-)
-
-# ---------------------------------------------------
+# --------------------------------------------------
 # PROMPTS
-# ---------------------------------------------------
+# --------------------------------------------------
 
-SYSTEM_PROMPT = "You are a careful science fact checker."
+SYSTEM_PROMPT="You are a careful science fact checker."
 
-QUICK_PROMPT = """
+QUICK_PROMPT="""
 VERDICT: <True|False|Uncertain>
 CONFIDENCE: <0-100>%
 EXPLANATION: <short explanation>
@@ -100,7 +76,7 @@ EXPLANATION: <short explanation>
 Claim: "{claim}"
 """
 
-REASON_PROMPT = """
+REASON_PROMPT="""
 REASONING:
 Step 1: Identify key science concept
 Step 2: Compare with known science
@@ -111,10 +87,6 @@ EXPLANATION: <short explanation>
 
 Claim: "{claim}"
 """
-
-# ---------------------------------------------------
-# AI CALL
-# ---------------------------------------------------
 
 @dataclass
 class AIResult:
@@ -142,11 +114,7 @@ def parse(text):
 
 def ask_ai(claim,mode):
 
-    if client is None:
-        st.error("API key missing")
-        return AIResult("Uncertain",0,"","")
-
-    prompt = QUICK_PROMPT if mode=="quick" else REASON_PROMPT
+    prompt=QUICK_PROMPT if mode=="quick" else REASON_PROMPT
 
     resp=client.chat.completions.create(
         model=MODEL,
@@ -163,51 +131,56 @@ def ask_ai(claim,mode):
 
     return AIResult(verdict,conf,exp,text)
 
-# ---------------------------------------------------
+# --------------------------------------------------
 # NAVIGATION
-# ---------------------------------------------------
+# --------------------------------------------------
 
-page=st.radio(
-"",
-["Experiment","Ask Your Own Question","Results"],
-horizontal=True
-)
+page=st.radio("",["Experiment","Ask Your Own Question","Results"],horizontal=True)
 
-# ---------------------------------------------------
+# --------------------------------------------------
 # EXPERIMENT PAGE
-# ---------------------------------------------------
+# --------------------------------------------------
 
 if page=="Experiment":
 
     st.subheader("Experiment")
+    st.info("Goal: Test whether structured reasoning improves AI reliability.")
 
-    claim=CLAIMS[st.session_state.index]["text"]
+    colA,colB=st.columns(2)
 
-    st.progress((st.session_state.index+1)/len(CLAIMS))
+    if colA.button("Run 5 Random Claims (Judge Mode)"):
 
-    st.info(f"Claim {st.session_state.index+1}: {claim}")
+        indices=random.sample(range(len(CLAIMS)),5)
 
-    col1,col2=st.columns(2)
+        for i in indices:
 
-    if col1.button("Run Quick Mode"):
+            claim=CLAIMS[i]["text"]
 
-        st.session_state.results["quick"][st.session_state.index]=ask_ai(claim,"quick")
+            quick=ask_ai(claim,"quick")
+            reason=ask_ai(claim,"reason")
 
-    if col2.button("Run Reasoning Mode"):
+            st.session_state.results["quick"][i]=quick
+            st.session_state.results["reason"][i]=reason
 
-        st.session_state.results["reason"][st.session_state.index]=ask_ai(claim,"reason")
+        st.success("Completed 5 random comparisons")
 
-    if st.button("Next Claim"):
+    if colB.button("Run Entire Experiment Automatically"):
 
-        st.session_state.index+=1
+        for i,c in enumerate(CLAIMS):
 
-        if st.session_state.index>=len(CLAIMS):
+            claim=c["text"]
 
-            st.success("Experiment complete. See Results page.")
+            quick=ask_ai(claim,"quick")
+            reason=ask_ai(claim,"reason")
 
-# ---------------------------------------------------
+            st.session_state.results["quick"][i]=quick
+            st.session_state.results["reason"][i]=reason
+
+        st.success("Experiment complete")
+
+# --------------------------------------------------
 # ASK YOUR OWN QUESTION
-# ---------------------------------------------------
+# --------------------------------------------------
 
 elif page=="Ask Your Own Question":
 
@@ -225,33 +198,32 @@ elif page=="Ask Your Own Question":
         with c1:
             st.write("Quick Mode")
             st.write(quick.verdict)
-            st.write(quick.confidence)
+            st.write(f"Confidence: {quick.confidence}%")
             st.write(quick.explanation)
 
         with c2:
             st.write("Reasoning Mode")
             st.write(reason.verdict)
-            st.write(reason.confidence)
+            st.write(f"Confidence: {reason.confidence}%")
             st.write(reason.explanation)
 
-# ---------------------------------------------------
-# RESULTS
-# ---------------------------------------------------
+# --------------------------------------------------
+# RESULTS PAGE
+# --------------------------------------------------
 
 else:
 
-    st.subheader("Results")
+    st.subheader("Results Dashboard")
 
     quick=st.session_state.results["quick"]
     reason=st.session_state.results["reason"]
 
-    if not quick or not reason:
+    if not quick:
         st.warning("Run experiment first.")
         st.stop()
 
     acc_q=0
     acc_r=0
-
     conf_q=[]
     conf_r=[]
 
@@ -277,10 +249,25 @@ else:
     gap_q=abs(avg_q-acc_q)
     gap_r=abs(avg_r-acc_r)
 
+    # --------------------------------------------------
+    # DASHBOARD METRICS
+    # --------------------------------------------------
+
+    m1,m2,m3,m4=st.columns(4)
+
+    m1.metric("Quick Accuracy",f"{acc_q:.1f}%")
+    m2.metric("Reasoning Accuracy",f"{acc_r:.1f}%")
+    m3.metric("Quick Calibration Gap",f"{gap_q:.1f}")
+    m4.metric("Reasoning Calibration Gap",f"{gap_r:.1f}")
+
+    st.divider()
+
+    # --------------------------------------------------
+    # CHARTS
+    # --------------------------------------------------
+
     fig,ax=plt.subplots(figsize=(4,3))
-    bars=ax.bar(["Quick","Reason"],[acc_q,acc_r])
-    for b in bars:
-        ax.text(b.get_x()+.25,b.get_height()+1,f"{b.get_height():.1f}")
+    ax.bar(["Quick","Reason"],[acc_q,acc_r])
     ax.set_title("Accuracy")
     st.pyplot(fig)
 
@@ -297,14 +284,12 @@ else:
     st.markdown("### Results Summary")
 
     st.write(
-    f"Reasoning mode achieved {acc_r:.1f}% accuracy compared to {acc_q:.1f}% in quick mode. "
-    f"Calibration gap was {gap_r:.1f} vs {gap_q:.1f}. "
-    f"This indicates reasoning may improve reliability."
+        f"Reasoning mode achieved {acc_r:.1f}% accuracy compared to {acc_q:.1f}% in quick mode."
     )
 
-    # ---------------------------------------------------
+    # --------------------------------------------------
     # CSV EXPORT
-    # ---------------------------------------------------
+    # --------------------------------------------------
 
     rows=[]
 
@@ -320,7 +305,7 @@ else:
             reason[i].confidence
         ])
 
-    csv_file="experiment_results.csv"
+    csv_file="results.csv"
 
     with open(csv_file,"w",newline="") as f:
 
@@ -340,15 +325,9 @@ else:
 
     with open(csv_file,"rb") as f:
 
-        st.download_button(
-            "Download Experiment Data (CSV)",
-            f,
-            "results.csv",
-            "text/csv"
-        )
+        st.download_button("Download Experiment Data",f,"results.csv")
 
     if st.button("Reset Experiment"):
 
-        st.session_state.index=0
         st.session_state.results={"quick":{}, "reason":{}}
         st.rerun()
