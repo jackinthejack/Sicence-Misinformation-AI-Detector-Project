@@ -22,7 +22,7 @@ MAX_TOKENS=700
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ---------------------------------------------------------
-# CLAIM DATASET
+# CLAIM DATASET 1
 # ---------------------------------------------------------
 
 CLAIMS = [
