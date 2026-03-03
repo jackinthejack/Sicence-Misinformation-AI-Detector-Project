@@ -1,392 +1,339 @@
 import os
 import re
-import time
+import io
+import csv
+import random
+import statistics
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import streamlit as st
 import matplotlib.pyplot as plt
 from openai import OpenAI
 
-# -----------------------------
-# App Setup
-# -----------------------------
-st.set_page_config(
-    page_title="Science Misinformation Detector (Experiment)",
-    page_icon="🧪",
-    layout="wide",
-)
+st.set_page_config(page_title="AI Reliability Experiment by Jack Eckel", page_icon="🧪", layout="wide")
 
-st.title("🧪 Science Misinformation Detector")
-st.caption(
-    "6th Grade Science Fair Project by Jack Eckel: Does forcing AI to show reasoning improve accuracy at identifying misinformation?"
-)
+st.title("AI Reliability Experiment by Jack Eckel")
+st.caption("Testing whether structured reasoning improves AI fact-checking reliability by Jack Eckel")
 
-# Read API key from environment variable (Streamlit Cloud uses Secrets -> env var)
-API_KEY = os.getenv("OPENAI_API_KEY", "")
-if not API_KEY:
-    st.warning(
-        "OPENAI_API_KEY is not set yet. The app can run locally once you set it, or on Streamlit Cloud via Secrets."
-    )
+MODEL="gpt-4o-mini"
+TEMPERATURE=0.2
+MAX_TOKENS=700
 
-client = OpenAI(api_key=API_KEY) if API_KEY else None
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-MODEL_NAME = "gpt-4o-mini"  # cost-effective and fast
+# ---------------------------------------------------------
+# CLAIM DATASET
+# ---------------------------------------------------------
 
-
-# -----------------------------
-# Data: Preloaded Claims
-# -----------------------------
-# Keep claims age-appropriate and science-focused.
-# answer must be one of: "True", "False"
-PRELOADED_CLAIMS: List[Dict[str, str]] = [
-    {"text": "The Earth orbits the Sun.", "answer": "True"},
-    {"text": "Humans use only 10% of their brains.", "answer": "False"},
-    {"text": "Water boils at 100°C (212°F) at sea level.", "answer": "True"},
-    {"text": "Lightning never strikes the same place twice.", "answer": "False"},
-    {"text": "Vaccines cause autism.", "answer": "False"},
-    {"text": "Plants make their own food using photosynthesis.", "answer": "True"},
-    {"text": "The Great Wall of China is visible from the Moon with the naked eye.", "answer": "False"},
-    {"text": "Sound travels faster in water than in air.", "answer": "True"},
-    {"text": "Seasons are caused because Earth is much closer to the Sun in summer.", "answer": "False"},
-    {"text": "Antibiotics can kill viruses like the flu virus.", "answer": "False"},
-    {"text": "All metals are attracted to magnets.", "answer": "False"},
-    {"text": "Carbon dioxide is a greenhouse gas.", "answer": "True"},
-    {"text": "The Moon produces its own light.", "answer": "False"},
-    {"text": "A heavier object falls faster than a lighter one (in a vacuum).", "answer": "False"},
-    {"text": "The ozone layer helps block some harmful ultraviolet (UV) radiation.", "answer": "True"},
-    {"text": "Sugar always causes hyperactivity in children.", "answer": "False"},
-    {"text": "Earth’s inner core is extremely hot.", "answer": "True"},
-    {"text": "All bacteria are harmful to humans.", "answer": "False"},
-    {"text": "A solar eclipse happens when the Moon blocks the Sun from view on Earth.", "answer": "True"},
-    {"text": "Plastic decomposes quickly in nature (within a few years).", "answer": "False"},
+CLAIMS = [
+{"text":"If Earth stopped rotating but continued orbiting the Sun, we would still have normal day and night cycles.","answer":"False"},
+{"text":"If you double the mass of an object in free fall in a vacuum, it will hit the ground at the same time as a lighter object.","answer":"True"},
+{"text":"Increasing the temperature of a gas in a sealed container increases the pressure.","answer":"True"},
+{"text":"If two objects have the same volume but different masses, they must have the same density.","answer":"False"},
+{"text":"An object moving at constant velocity has no net force acting on it.","answer":"True"},
+{"text":"If a plant is placed in the dark, it immediately stops cellular respiration.","answer":"False"},
+{"text":"In space, a rocket must continuously fire its engines to keep moving forward.","answer":"False"},
+{"text":"If two chemicals react and temperature decreases, the reaction cannot be exothermic.","answer":"True"},
+{"text":"If you increase the speed of a moving object, its kinetic energy increases linearly.","answer":"False"},
+{"text":"A metal object and a wooden object of the same mass will experience the same gravitational force near Earth’s surface.","answer":"True"},
+{"text":"If Earth had no atmosphere, the sky would appear blue during the day.","answer":"False"},
+{"text":"When ice melts, the total mass of the water remains the same.","answer":"True"},
+{"text":"If a chemical reaction absorbs heat from its surroundings, it is exothermic.","answer":"False"},
+{"text":"An object in orbit around Earth is constantly falling toward Earth.","answer":"True"},
+{"text":"If two planets have the same mass but different radii, the one with the smaller radius has stronger surface gravity.","answer":"True"},
+{"text":"If light travels through water instead of air, its wavelength stays exactly the same.","answer":"False"},
+{"text":"A higher pH value means a solution is more acidic.","answer":"False"},
+{"text":"Viruses are considered living organisms.","answer":"Uncertain"},
+{"text":"Pluto is a planet.","answer":"Uncertain"},
+{"text":"Glass is a solid.","answer":"Uncertain"},
 ]
 
+# ---------------------------------------------------------
+# PROMPTS
+# ---------------------------------------------------------
 
-# -----------------------------
-# Prompts
-# -----------------------------
-SYSTEM_INSTRUCTIONS = """
-You are a careful science fact-checking assistant for a school project.
-Your job: judge whether a short science claim is TRUE, FALSE, or UNCERTAIN.
-Be honest: if you do not have enough information, choose UNCERTAIN.
-Use age-appropriate language for a 6th grader.
-Avoid political content. Avoid medical advice. Provide general educational info only.
-"""
+SYSTEM="You are a careful science fact checker."
 
-QUICK_MODE_TEMPLATE = """
-Evaluate this claim and respond in this exact format:
-
+QUICK_PROMPT="""
 VERDICT: <True|False|Uncertain>
-CONFIDENCE: <0-100>%
-EXPLANATION: <2-4 sentences>
+CONFIDENCE: <0-100>
+EXPLANATION: <short explanation>
 
 Claim: "{claim}"
 """
 
-REASONING_MODE_TEMPLATE = """
-Evaluate this claim carefully. First break it into parts, then decide.
-Respond in this exact format:
-
+REASON_PROMPT="""
 REASONING:
-- <bullet 1>
-- <bullet 2>
-- <bullet 3 (optional)>
+Step 1: Identify scientific principle
+Step 2: Compare with established science
 
 VERDICT: <True|False|Uncertain>
-CONFIDENCE: <0-100>%
-EXPLANATION: <2-4 sentences>
+CONFIDENCE: <0-100>
+EXPLANATION: <short explanation>
 
 Claim: "{claim}"
 """
 
+# ---------------------------------------------------------
+# DATA STRUCT
+# ---------------------------------------------------------
 
-# -----------------------------
-# Helpers
-# -----------------------------
 @dataclass
-class AIResult:
-    verdict: str              # True|False|Uncertain
-    confidence: int           # 0-100
-    explanation: str
-    raw_text: str
-    seconds: float
+class Result:
+    verdict:str
+    confidence:int
+    explanation:str
+    raw:str
 
+# ---------------------------------------------------------
+# SESSION STATE
+# ---------------------------------------------------------
 
-def extract_result(text: str) -> Tuple[str, int, str]:
-    """
-    Parse model output. We enforce a strict format, but still parse defensively.
-    """
-    verdict = "Uncertain"
-    confidence = 50
-    explanation = ""
+if "results" not in st.session_state:
+    st.session_state.results={"quick":{}, "reason":{}}
 
-    # Verdict
-    m = re.search(r"VERDICT:\s*(True|False|Uncertain)", text, re.IGNORECASE)
-    if m:
-        verdict = m.group(1).capitalize()
+if "judge_results" not in st.session_state:
+    st.session_state.judge_results=None
 
-    # Confidence
-    m = re.search(r"CONFIDENCE:\s*(\d{1,3})\s*%", text)
-    if m:
-        confidence = max(0, min(100, int(m.group(1))))
+if "idx" not in st.session_state:
+    st.session_state.idx=0
 
-    # Explanation
-    m = re.search(r"EXPLANATION:\s*(.+)", text, re.IGNORECASE | re.DOTALL)
-    if m:
-        explanation = m.group(1).strip()
-        # keep it from being too huge if the model rambles
-        explanation = explanation[:800]
+# ---------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------
 
-    return verdict, confidence, explanation
+def parse(txt):
 
+    v=re.search(r"VERDICT:\s*(True|False|Uncertain)",txt)
+    c=re.search(r"CONFIDENCE:\s*(\d+)",txt)
+    e=re.search(r"EXPLANATION:\s*(.*)",txt)
 
-def call_ai(claim: str, mode: str) -> AIResult:
-    if client is None:
-        raise RuntimeError("OpenAI client not initialized. Set OPENAI_API_KEY.")
+    verdict=v.group(1) if v else "Uncertain"
+    confidence=int(c.group(1)) if c else 50
+    explanation=e.group(1) if e else ""
 
-    prompt = (QUICK_MODE_TEMPLATE if mode == "quick" else REASONING_MODE_TEMPLATE).format(claim=claim)
+    return verdict,confidence,explanation
 
-    t0 = time.time()
-    resp = client.chat.completions.create(
-        model=MODEL_NAME,
+def ask_ai(claim,mode):
+
+    prompt=QUICK_PROMPT if mode=="quick" else REASON_PROMPT
+
+    r=client.chat.completions.create(
+        model=MODEL,
+        temperature=TEMPERATURE,
+        max_tokens=MAX_TOKENS,
         messages=[
-            {"role": "system", "content": SYSTEM_INSTRUCTIONS.strip()},
-            {"role": "user", "content": prompt.strip()},
-        ],
-        temperature=0.2,
-    )
-    t1 = time.time()
-
-    text = resp.choices[0].message.content or ""
-    verdict, confidence, explanation = extract_result(text)
-
-    return AIResult(
-        verdict=verdict,
-        confidence=confidence,
-        explanation=explanation,
-        raw_text=text,
-        seconds=round(t1 - t0, 2),
+            {"role":"system","content":SYSTEM},
+            {"role":"user","content":prompt.format(claim=claim)}
+        ]
     )
 
+    txt=r.choices[0].message.content
 
-def badge(verdict: str) -> str:
-    if verdict == "True":
-        return "🟢 TRUE"
-    if verdict == "False":
-        return "🔴 FALSE"
+    v,c,e=parse(txt)
+
+    return Result(v,c,e,txt)
+
+def majority(results):
+
+    votes=[r.verdict for r in results]
+    return max(set(votes),key=votes.count)
+
+def consistency(results):
+
+    votes=[r.verdict for r in results]
+    m=majority(results)
+    return votes.count(m)/len(votes)*100
+
+def badge(v):
+
+    if v=="True": return "🟢 TRUE"
+    if v=="False": return "🔴 FALSE"
     return "🟡 UNCERTAIN"
 
+# ---------------------------------------------------------
+# NAVIGATION
+# ---------------------------------------------------------
 
-def compute_score(ai_verdict: str, correct_answer: str) -> bool:
-    """
-    Uncertain counts as incorrect (but we'll track it separately).
-    """
-    return ai_verdict in ("True", "False") and ai_verdict == correct_answer
+page=st.radio("",[
+"How This Experiment Works",
+"Experiment",
+"Ask Your Own Question",
+"Results"
+],horizontal=True)
 
+# =========================================================
+# INSTRUCTIONS
+# =========================================================
 
-def init_state():
-    if "idx" not in st.session_state:
-        st.session_state.idx = 0
+if page=="How This Experiment Works":
 
-    # Store results per claim index
-    # Example: st.session_state.results["quick"][idx] = {"verdict":..., "correct":..., ...}
-    if "results" not in st.session_state:
-        st.session_state.results = {"quick": {}, "reason": {}}
+    st.header("How This Experiment Works")
 
-    if "view" not in st.session_state:
-        st.session_state.view = "Experiment"
+    st.write("""
+This project compares two AI response styles:
 
-init_state()
+Quick Mode → immediate answer  
+Reasoning Mode → step-by-step reasoning
 
+Metrics measured:
 
-# -----------------------------
-# Sidebar Navigation
-# -----------------------------
-st.sidebar.header("🧭 Navigation")
-st.session_state.view = st.sidebar.radio("Choose a section:", ["Experiment", "Live Demo", "Results"])
+• Accuracy  
+• Confidence  
+• Consistency  
+• Uncertainty rate
+""")
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("📌 Project Variable")
-st.sidebar.write("**Independent variable:** AI mode (Quick vs Reasoning)")
-st.sidebar.write("**Dependent variable:** Accuracy (%)")
+# =========================================================
+# EXPERIMENT
+# =========================================================
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("🔐 Key Setup")
-st.sidebar.write("On Streamlit Cloud, add `OPENAI_API_KEY` in **Secrets**.")
+elif page=="Experiment":
 
+    st.header("Experiment")
 
-# -----------------------------
-# Main Views
-# -----------------------------
-def render_experiment():
-    st.subheader("🔬 Experiment Mode (Step-by-step)")
+    multi=st.checkbox("Run each claim 3 times (consistency test)",True)
 
-    total = len(PRELOADED_CLAIMS)
-    idx = st.session_state.idx
-    claim = PRELOADED_CLAIMS[idx]["text"]
-    correct = PRELOADED_CLAIMS[idx]["answer"]
+    runs=3 if multi else 1
 
-    colA, colB = st.columns([2, 1], gap="large")
+    if st.button("Run 5 Random Claims (Judge Demo)"):
 
-    with colA:
-        st.markdown("### Claim")
-        st.markdown(f"**{idx+1} of {total}**")
-        st.info(claim)
+        results=[]
 
-        st.markdown("### Run Analysis")
-        btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
+        for i in random.sample(range(20),5):
 
-        with btn_col1:
-            if st.button("⚡ Run Quick Mode", use_container_width=True, disabled=(client is None)):
-                res = call_ai(claim, mode="quick")
-                st.session_state.results["quick"][idx] = {
-                    "verdict": res.verdict,
-                    "confidence": res.confidence,
-                    "seconds": res.seconds,
-                    "raw": res.raw_text,
-                    "correct": compute_score(res.verdict, correct),
-                    "uncertain": (res.verdict == "Uncertain"),
-                }
+            claim=CLAIMS[i]["text"]
+            truth=CLAIMS[i]["answer"]
 
-        with btn_col2:
-            if st.button("🧠 Run Reasoning Mode", use_container_width=True, disabled=(client is None)):
-                res = call_ai(claim, mode="reason")
-                st.session_state.results["reason"][idx] = {
-                    "verdict": res.verdict,
-                    "confidence": res.confidence,
-                    "seconds": res.seconds,
-                    "raw": res.raw_text,
-                    "correct": compute_score(res.verdict, correct),
-                    "uncertain": (res.verdict == "Uncertain"),
-                }
+            q=[ask_ai(claim,"quick") for _ in range(runs)]
+            r=[ask_ai(claim,"reason") for _ in range(runs)]
 
-        with btn_col3:
-            if st.button("➡️ Next Claim", use_container_width=True):
-                if st.session_state.idx < total - 1:
-                    st.session_state.idx += 1
-                else:
-                    st.success("You reached the end! Go to the Results tab to see the chart.")
+            st.session_state.results["quick"][i]=q
+            st.session_state.results["reason"][i]=r
 
-        st.caption("Tip: Run **both modes** on each claim before moving to the next claim.")
+            results.append((i,claim,truth,q,r))
 
-    with colB:
-        st.markdown("### Answer Key (Hidden Option)")
-        show_key = st.checkbox("Show correct label (for project owner)", value=False)
-        if show_key:
-            st.write(f"✅ Correct label: **{correct}**")
-        else:
-            st.write("🔒 Hidden during judging (recommended).")
+        st.session_state.judge_results=results
 
-        st.markdown("---")
-        st.markdown("### Results for This Claim")
+    # display judge results
 
-        q = st.session_state.results["quick"].get(idx)
-        r = st.session_state.results["reason"].get(idx)
+    if st.session_state.judge_results:
 
-        def render_one(title: str, data: Optional[Dict]):
-            st.markdown(f"**{title}**")
-            if not data:
-                st.write("— not run yet —")
-                return
-            st.write(badge(data["verdict"]))
-            st.write(f"Confidence: **{data['confidence']}%**  |  Time: **{data['seconds']}s**")
-            st.write(f"Scored correct? **{'Yes' if data['correct'] else 'No'}**")
-            with st.expander("Show full AI output"):
-                st.text(data["raw"])
+        st.subheader("Judge Demo Results")
 
-        render_one("Quick Mode", q)
-        st.markdown("---")
-        render_one("Reasoning Mode", r)
+        for i,claim,truth,q,r in st.session_state.judge_results:
 
+            st.write("###",claim)
 
-def render_live_demo():
-    st.subheader("🌎 Live Mode (User-entered claim)")
-    st.write("Type any science claim.")
+            col1,col2=st.columns(2)
 
-    claim = st.text_input("Enter a science claim:", placeholder="Example: 'Electricity is a type of energy.'")
-    mode = st.radio("Choose AI mode:", ["Quick Mode", "Reasoning Mode"], horizontal=True)
-    run = st.button("Analyze Claim", disabled=(client is None or not claim.strip()))
+            with col1:
+                st.write("Quick Mode")
+                st.write(badge(majority(q)))
+                st.write("Confidence:",round(statistics.mean([x.confidence for x in q]),1))
+                st.write("Consistency:",round(consistency(q),1),"%")
+                st.write(q[0].explanation)
 
-    if run:
-        res = call_ai(claim.strip(), mode="quick" if mode.startswith("Quick") else "reason")
-        left, right = st.columns([1, 2], gap="large")
-        with left:
-            st.markdown("### Verdict")
-            st.write(badge(res.verdict))
-            st.write(f"Confidence: **{res.confidence}%**")
-            st.write(f"Time: **{res.seconds}s**")
-        with right:
-            st.markdown("### Explanation")
-            st.write(res.explanation)
-            with st.expander("Show full AI output"):
-                st.text(res.raw_text)
+            with col2:
+                st.write("Reasoning Mode")
+                st.write(badge(majority(r)))
+                st.write("Confidence:",round(statistics.mean([x.confidence for x in r]),1))
+                st.write("Consistency:",round(consistency(r),1),"%")
+                st.write(r[0].explanation)
 
+            st.divider()
 
-def render_results():
-    st.subheader("📊 Results Dashboard")
-    total = len(PRELOADED_CLAIMS)
+# =========================================================
+# ASK QUESTION
+# =========================================================
 
-    quick_results = st.session_state.results["quick"]
-    reason_results = st.session_state.results["reason"]
+elif page=="Ask Your Own Question":
 
-    def summarize(results: Dict[int, Dict]) -> Tuple[int, int, int]:
-        correct = sum(1 for _, d in results.items() if d.get("correct"))
-        uncertain = sum(1 for _, d in results.items() if d.get("uncertain"))
-        ran = len(results)
-        return ran, correct, uncertain
+    claim=st.text_input("Enter a science claim")
 
-    q_ran, q_correct, q_uncertain = summarize(quick_results)
-    r_ran, r_correct, r_uncertain = summarize(reason_results)
+    if st.button("Analyze"):
 
-    col1, col2, col3 = st.columns(3, gap="large")
-    with col1:
-        st.metric("Claims Total", total)
-    with col2:
-        st.metric("Quick Mode Run", f"{q_ran}/{total}")
-    with col3:
-        st.metric("Reasoning Mode Run", f"{r_ran}/{total}")
+        q=ask_ai(claim,"quick")
+        r=ask_ai(claim,"reason")
 
-    st.markdown("---")
+        col1,col2=st.columns(2)
 
-    # Avoid division by zero
-    q_acc = (q_correct / q_ran * 100) if q_ran else 0
-    r_acc = (r_correct / r_ran * 100) if r_ran else 0
+        with col1:
+            st.write("Quick Mode")
+            st.write(badge(q.verdict),q.confidence)
+            st.write(q.explanation)
 
-    colA, colB = st.columns([1, 1], gap="large")
-    with colA:
-        st.markdown("### Accuracy")
-        st.write(f"⚡ Quick Mode Accuracy: **{q_acc:.1f}%**")
-        st.write(f"🧠 Reasoning Mode Accuracy: **{r_acc:.1f}%**")
+        with col2:
+            st.write("Reasoning Mode")
+            st.write(badge(r.verdict),r.confidence)
+            st.write(r.explanation)
 
-        fig = plt.figure()
-        plt.bar(["Quick", "Reasoning"], [q_acc, r_acc])
-        plt.ylim(0, 100)
-        plt.ylabel("Accuracy (%)")
+# =========================================================
+# RESULTS
+# =========================================================
+
+else:
+
+    quick=st.session_state.results["quick"]
+    reason=st.session_state.results["reason"]
+
+    shared=set(quick)&set(reason)
+
+    if not shared:
+        st.warning("Run experiment first.")
+        st.stop()
+
+    acc_q=0
+    acc_r=0
+
+    cons_q=[]
+    cons_r=[]
+
+    for i in shared:
+
+        truth=CLAIMS[i]["answer"]
+
+        q=quick[i]
+        r=reason[i]
+
+        if majority(q)==truth: acc_q+=1
+        if majority(r)==truth: acc_r+=1
+
+        cons_q.append(consistency(q))
+        cons_r.append(consistency(r))
+
+    n=len(shared)
+
+    acc_q=acc_q/n*100
+    acc_r=acc_r/n*100
+
+    st.header("Results Dashboard")
+
+    st.success(f"Reasoning improved accuracy by {round(acc_r-acc_q,1)}%")
+
+    def chart(title,labels,values):
+
+        fig,ax=plt.subplots(figsize=(4,3))
+
+        bars=ax.bar(labels,values)
+
+        for bar in bars:
+            h=bar.get_height()
+            ax.text(bar.get_x()+bar.get_width()/2,h,f"{h:.1f}",ha='center')
+
+        ax.set_title(title)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
         st.pyplot(fig)
 
-    with colB:
-        st.markdown("### Uncertain Counts")
-        st.write(f"⚡ Quick Mode Uncertain: **{q_uncertain}**")
-        st.write(f"🧠 Reasoning Mode Uncertain: **{r_uncertain}**")
+    col1,col2=st.columns(2)
 
-        fig2 = plt.figure()
-        plt.bar(["Quick", "Reasoning"], [q_uncertain, r_uncertain])
-        plt.ylabel("Uncertain Responses (count)")
-        st.pyplot(fig2)
+    with col1:
+        chart("Accuracy",["Quick","Reason"],[acc_q,acc_r])
 
-    st.markdown("---")
-    st.markdown("### Reset / Start Over")
-    if st.button("🔄 Reset Experiment Data"):
-        st.session_state.idx = 0
-        st.session_state.results = {"quick": {}, "reason": {}}
-        st.success("Reset complete. Go back to Experiment mode to start again.")
-
-
-# Render selected view
-if st.session_state.view == "Experiment":
-    render_experiment()
-elif st.session_state.view == "Live Demo":
-    render_live_demo()
-else:
-    render_results()
+    with col2:
+        chart("Consistency",["Quick","Reason"],[
+            statistics.mean(cons_q),
+            statistics.mean(cons_r)
+        ])
