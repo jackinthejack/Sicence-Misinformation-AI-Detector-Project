@@ -403,7 +403,7 @@ elif page == "Experiment":
     # -----------------------
     # MANUAL EXPERIMENT
     # -----------------------
-    st.subheader("Manual Experiment (All 20 Claims)")
+    st.subheader("Manual Experiment (All 30 Claims)")
     idx = st.session_state.claim_index
     claim = CLAIMS[idx]["text"]
 
