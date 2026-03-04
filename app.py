@@ -15,22 +15,22 @@ from openai import OpenAI
 st.set_page_config(page_title="AI Reliability Experiment", page_icon="🧪", layout="wide")
 
 st.title("AI Reliability Experiment by Jack Eckel")
-st.caption("Testing whether structured reasoning improves AI fact-checking reliability by Jack Eckel")
+st.caption("Testing whether structured reasoning improves AI fact-checking reliability")
 
 MODEL = "gpt-4o-mini"
-
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 plt.style.use("seaborn-v0_8-whitegrid")
 
-COLOR_QUICK = "#1f77b4"
-COLOR_REASON = "#ff7f0e"
+COLOR_QUICK="#1f77b4"
+COLOR_REASON="#ff7f0e"
 
 # ---------------------------------------------------------
 # CLAIM DATASET
 # ---------------------------------------------------------
 
-CLAIMS = [
+CLAIMS=[
+
 {"text":"If Earth stopped rotating but continued orbiting the Sun, we would still have normal day and night cycles.","answer":"False"},
 {"text":"If you double the mass of an object in free fall in a vacuum, it will hit the ground at the same time as a lighter object.","answer":"True"},
 {"text":"Increasing the temperature of a gas in a sealed container increases the pressure.","answer":"True"},
@@ -50,16 +50,17 @@ CLAIMS = [
 {"text":"A higher pH value means a solution is more acidic.","answer":"False"},
 {"text":"Viruses are considered living organisms.","answer":"Uncertain"},
 {"text":"Pluto is a planet.","answer":"Uncertain"},
-{"text":"Glass is a solid.","answer":"Uncertain"},
+{"text":"Glass is a solid.","answer":"Uncertain"}
+
 ]
 
 # ---------------------------------------------------------
 # PROMPTS
 # ---------------------------------------------------------
 
-SYSTEM = "You are a careful science fact checker."
+SYSTEM="You are a careful science fact checker."
 
-QUICK_PROMPT = """
+QUICK_PROMPT="""
 VERDICT: <True|False|Uncertain>
 CONFIDENCE: <0-100>
 EXPLANATION: <short explanation>
@@ -67,7 +68,7 @@ EXPLANATION: <short explanation>
 Claim: "{claim}"
 """
 
-REASON_PROMPT = """
+REASON_PROMPT="""
 Think step-by-step and explain reasoning using bullet points.
 
 REASONING:
@@ -90,7 +91,6 @@ Claim: "{claim}"
 class Result:
     verdict:str
     confidence:int
-    explanation:str
     raw:str
 
 # ---------------------------------------------------------
@@ -98,10 +98,7 @@ class Result:
 # ---------------------------------------------------------
 
 if "results" not in st.session_state:
-    st.session_state.results={"quick":{}, "reason":{}}
-
-if "judge_results" not in st.session_state:
-    st.session_state.judge_results=None
+    st.session_state.results={"quick":{},"reason":{}}
 
 if "claim_index" not in st.session_state:
     st.session_state.claim_index=0
@@ -135,13 +132,12 @@ def ask_ai(claim,mode):
         )
 
     txt=r.choices[0].message.content
-
     v,c=parse(txt)
 
-    return Result(v,c,"",txt)
+    return Result(v,c,txt)
 
 # ---------------------------------------------------------
-# HELPERS
+# METRICS
 # ---------------------------------------------------------
 
 def majority(results):
@@ -153,10 +149,17 @@ def consistency(results):
     m=majority(results)
     return votes.count(m)/len(votes)*100
 
-def badge(v):
-    if v=="True": return "🟢 TRUE"
-    if v=="False": return "🔴 FALSE"
-    return "🟡 UNCERTAIN"
+def responsible_score(pred,truth):
+
+    if pred==truth:
+        return 1
+    if pred=="Uncertain":
+        return 0.5
+    return 0
+
+# ---------------------------------------------------------
+# CHART
+# ---------------------------------------------------------
 
 def chart(title,values):
 
@@ -168,133 +171,155 @@ def chart(title,values):
         ax.text(b.get_x()+b.get_width()/2,b.get_height(),f"{b.get_height():.1f}",ha='center')
 
     ax.set_title(title)
-
     st.pyplot(fig)
-
-# ---------------------------------------------------------
-# RESPONSIBLE ANSWER SCORE
-# ---------------------------------------------------------
-
-def responsible_score(pred,truth):
-
-    if pred==truth:
-        return 1
-
-    if pred=="Uncertain":
-        return 0.5
-
-    return 0
 
 # ---------------------------------------------------------
 # NAVIGATION
 # ---------------------------------------------------------
 
-page=st.radio("",["How This Experiment Works","Experiment","Ask Your Own Question","Results"],horizontal=True)
+page=st.radio("",["Instructions","Experiment","Ask Your Own Question","Results"],horizontal=True)
 
 # ---------------------------------------------------------
-# INSTRUCTIONS PAGE
+# INSTRUCTIONS
 # ---------------------------------------------------------
 
-if page=="How This Experiment Works":
+if page=="Instructions":
 
-    st.header("How the AI Reliability Experiment Works")
-
-    st.write("""
-This experiment tests whether **structured reasoning improves AI fact-checking reliability**.
-""")
-
-    st.subheader("Two AI Response Modes")
+    st.header("How to Use the Experiment")
 
     st.write("""
-Quick Mode – AI answers immediately.
+This project tests whether **structured reasoning improves AI fact-checking reliability**.
 
-Reasoning Mode – AI performs step-by-step reasoning first.
+Two AI modes are compared:
+
+Quick Mode — AI answers immediately.
+
+Reasoning Mode — AI uses step-by-step reasoning first.
 """)
 
-    st.subheader("Hypothesis")
+    st.subheader("How to Run the Experiment")
 
     st.write("""
-If AI performs structured reasoning before answering,
-it will be:
+1. Click **Run 5 Random Claims** to demonstrate the system quickly.
 
-• More accurate  
-• More consistent  
-• More willing to say **Uncertain** when information is ambiguous
+2. Use the **Manual Experiment** to test all 20 scientific claims.
+
+3. Compare Quick Mode and Reasoning Mode answers.
+
+4. Open the **Results Dashboard** to see the experiment analysis.
 """)
 
-    st.subheader("Why Uncertainty Matters")
+    st.subheader("What the Charts Mean")
 
     st.write("""
-Human scientists often say *"I'm not sure"* when evidence is unclear.
+Accuracy — percent of correct answers.
 
-AI systems that sometimes answer **Uncertain** may behave more like
-careful scientific thinkers instead of guessing.
+Consistency — how often repeated runs give the same answer.
+
+Average Confidence — how confident the AI is.
+
+Uncertainty Rate — how often the AI admits uncertainty.
+
+Responsible Answer Score — rewards appropriate uncertainty.
+
+Overconfidence Rate — measures when AI should say uncertain but doesn't.
 """)
 
-    st.info(
-    "This experiment investigates whether structured reasoning allows AI systems "
-    "to behave more like careful human scientists by improving accuracy, "
-    "consistency, and responsible use of uncertainty."
-)
+    st.info("This experiment investigates whether reasoning makes AI behave more like careful human scientists.")
 
 # ---------------------------------------------------------
-# EXPERIMENT PAGE
+# EXPERIMENT
 # ---------------------------------------------------------
 
 elif page=="Experiment":
 
-    multi=st.checkbox("Run each claim 3 times (consistency test)",True)
-    runs=3 if multi else 1
+    if st.button("Reset Experiment"):
+        st.session_state.results={"quick":{},"reason":{}}
+        st.session_state.claim_index=0
 
-    if st.button("Run 5 Random Claims (Judge Demo)"):
+    runs=3 if st.checkbox("Run each claim 3 times") else 1
+
+    if st.button("Run 5 Random Claims"):
 
         progress=st.progress(0)
-
-        results=[]
 
         for idx,i in enumerate(random.sample(range(20),5)):
 
             claim=CLAIMS[i]["text"]
 
-            q=[ask_ai(claim,"quick") for _ in range(runs)]
-            r=[ask_ai(claim,"reason") for _ in range(runs)]
-
-            st.session_state.results["quick"][i]=q
-            st.session_state.results["reason"][i]=r
-
-            results.append((claim,q,r))
+            st.session_state.results["quick"][i]=[ask_ai(claim,"quick") for _ in range(runs)]
+            st.session_state.results["reason"][i]=[ask_ai(claim,"reason") for _ in range(runs)]
 
             progress.progress((idx+1)/5)
 
-        st.session_state.judge_results=results
+    idx=st.session_state.claim_index
+    claim=CLAIMS[idx]["text"]
 
-    if st.session_state.judge_results:
+    st.subheader(f"Manual Claim {idx+1}/20")
+    st.progress(idx/20)
+    st.write(claim)
 
-        for claim,q,r in st.session_state.judge_results:
+    c1,c2=st.columns(2)
 
-            st.write("###",claim)
+    if c1.button("Run Quick"):
+        st.session_state.results["quick"][idx]=[ask_ai(claim,"quick") for _ in range(runs)]
 
-            c1,c2=st.columns(2)
+    if c2.button("Run Reasoning"):
+        st.session_state.results["reason"][idx]=[ask_ai(claim,"reason") for _ in range(runs)]
 
-            with c1:
+    q=st.session_state.results["quick"].get(idx)
+    r=st.session_state.results["reason"].get(idx)
+
+    if q or r:
+
+        col1,col2=st.columns(2)
+
+        if q:
+            with col1:
                 st.subheader("Quick Mode")
-                st.write("Verdict:",badge(majority(q)))
-                st.write("Confidence:",round(statistics.mean([x.confidence for x in q]),1),"%")
+                st.write(majority(q),statistics.mean([x.confidence for x in q]),"%")
                 st.markdown(q[0].raw)
 
-            with c2:
+        if r:
+            with col2:
                 st.subheader("Reasoning Mode")
-                st.write("Verdict:",badge(majority(r)))
-                st.write("Confidence:",round(statistics.mean([x.confidence for x in r]),1),"%")
+                st.write(majority(r),statistics.mean([x.confidence for x in r]),"%")
                 st.markdown(r[0].raw)
 
-            st.divider()
+    if q and r:
+        if st.button("Next Claim"):
+            st.session_state.claim_index+=1
 
 # ---------------------------------------------------------
-# RESULTS DASHBOARD
+# ASK PAGE
 # ---------------------------------------------------------
 
-elif page=="Results":
+elif page=="Ask Your Own Question":
+
+    claim=st.text_input("Enter a scientific claim")
+
+    if st.button("Analyze Claim"):
+
+        q=ask_ai(claim,"quick")
+        r=ask_ai(claim,"reason")
+
+        c1,c2=st.columns(2)
+
+        with c1:
+            st.subheader("Quick Mode")
+            st.write(q.verdict,q.confidence,"%")
+            st.markdown(q.raw)
+
+        with c2:
+            st.subheader("Reasoning Mode")
+            st.write(r.verdict,r.confidence,"%")
+            st.markdown(r.raw)
+
+# ---------------------------------------------------------
+# RESULTS
+# ---------------------------------------------------------
+
+else:
 
     quick=st.session_state.results["quick"]
     reason=st.session_state.results["reason"]
@@ -302,29 +327,19 @@ elif page=="Results":
     shared=set(quick)&set(reason)
 
     if not shared:
-        st.warning("Run experiment first.")
+        st.warning("Run the experiment first.")
         st.stop()
 
-    acc_q=0
-    acc_r=0
+    acc_q=acc_r=unc_q=unc_r=ras_q=ras_r=over_q=over_r=0
     cons_q=[]
     cons_r=[]
-    unc_q=0
-    unc_r=0
-    ras_q=0
-    ras_r=0
-    over_q=0
-    over_r=0
 
     for i in shared:
 
         truth=CLAIMS[i]["answer"]
 
-        q=quick[i]
-        r=reason[i]
-
-        pred_q=majority(q)
-        pred_r=majority(r)
+        pred_q=majority(quick[i])
+        pred_r=majority(reason[i])
 
         if pred_q==truth: acc_q+=1
         if pred_r==truth: acc_r+=1
@@ -337,60 +352,46 @@ elif page=="Results":
 
         if truth=="Uncertain":
 
-            if pred_q!="Uncertain":
-                over_q+=1
+            if pred_q!="Uncertain": over_q+=1
+            if pred_r!="Uncertain": over_r+=1
 
-            if pred_r!="Uncertain":
-                over_r+=1
-
-        cons_q.append(consistency(q))
-        cons_r.append(consistency(r))
+        cons_q.append(consistency(quick[i]))
+        cons_r.append(consistency(reason[i]))
 
     n=len(shared)
 
     acc_q=acc_q/n*100
     acc_r=acc_r/n*100
-
     ras_q=ras_q/n*100
     ras_r=ras_r/n*100
-
     unc_q=unc_q/n*100
     unc_r=unc_r/n*100
-
     over_q=over_q/n*100
     over_r=over_r/n*100
 
     st.header("Results Dashboard")
 
-    st.subheader("Experiment Summary")
+    st.write("This dashboard compares AI performance between Quick Mode and Reasoning Mode.")
 
-    st.write(f"""
-Claims tested: **{n}**
+    c1,c2,c3=st.columns(3)
 
-Accuracy improvement from reasoning: **{round(acc_r-acc_q,1)} percentage points**
+    with c1: chart("Accuracy",[acc_q,acc_r])
+    with c2: chart("Consistency",[statistics.mean(cons_q),statistics.mean(cons_r)])
+    with c3: chart("Uncertainty Rate",[unc_q,unc_r])
+
+    c4,c5,c6=st.columns(3)
+
+    with c4: chart("Responsible Score",[ras_q,ras_r])
+    with c5: chart("Overconfidence Rate",[over_q,over_r])
+    with c6: chart("Average Confidence",[
+        statistics.mean([statistics.mean([x.confidence for x in quick[i]]) for i in shared]),
+        statistics.mean([statistics.mean([x.confidence for x in reason[i]]) for i in shared])
+    ])
+
+    st.subheader("Interpretation")
+
+    st.write("""
+If Reasoning Mode shows higher Responsible Answer Score,
+higher consistency, and lower overconfidence,
+it suggests reasoning makes AI behave more like a careful scientist.
 """)
-
-    col1,col2,col3=st.columns(3)
-
-    with col1:
-        chart("Accuracy",[acc_q,acc_r])
-
-    with col2:
-        chart("Consistency",[statistics.mean(cons_q),statistics.mean(cons_r)])
-
-    with col3:
-        chart("Average Confidence",[
-            statistics.mean([statistics.mean([x.confidence for x in quick[i]]) for i in shared]),
-            statistics.mean([statistics.mean([x.confidence for x in reason[i]]) for i in shared])
-        ])
-
-    col4,col5,col6=st.columns(3)
-
-    with col4:
-        chart("Uncertainty Rate",[unc_q,unc_r])
-
-    with col5:
-        chart("Responsible Answer Score",[ras_q,ras_r])
-
-    with col6:
-        chart("Overconfidence Rate",[over_q,over_r])
