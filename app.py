@@ -503,6 +503,9 @@ else:
         q_res = quick[i]
         r_res = reason[i]
 
+        if not q_res or not r_res:
+            continue
+
         pred_q = norm_label(majority(q_res))
         pred_r = norm_label(majority(r_res))
 
@@ -571,14 +574,18 @@ else:
     with k3:
         section_card("RAS Δ", f"<b>{(ras_r-ras_q):.1f} pts</b><br/><span style='font-size:12px;'>Responsible Answer Score</span>")
     with k4:
-        section_card("Overconfidence Δ", f"<b>{(over_r-over_q):.1f} pts</b><br/><span style='font-size:12px;'>Lower is better</span>")
+        section_card(
+            "Overconfidence Δ",
+            f"<b>{(over_q - over_r):.1f} pts</b><br/><span style='font-size:12px;'>Lower is better</span>"
+        )
 
     st.subheader("Charts")
     c1, c2, c3 = st.columns(3)
     with c1:
         small_bar("Accuracy (%)", [acc_q, acc_r])
     with c2:
-        small_bar("Consistency (%)", [statistics.mean(cons_q), statistics.mean(cons_r)])
+        cons_title = "Consistency (%)" if n > 1 and (statistics.mean(cons_q) < 100 or statistics.mean(cons_r) < 100) else "Consistency (%) (1 run = 100%)"
+        small_bar(cons_title, [statistics.mean(cons_q), statistics.mean(cons_r)])
     with c3:
         small_bar("Avg Confidence", [avg_conf_q, avg_conf_r])
 
