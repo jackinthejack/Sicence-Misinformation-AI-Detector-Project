@@ -311,9 +311,8 @@ if page == "Instructions":
 
     st.info(
         "Key idea: In science, 'I’m not sure' can be the most responsible answer. "
-        "This experiment measures not just accuracy, but also whether the AI uses uncertainty like a careful human scientist."
+        "This experiment measures not just accuracy, but also whether the AI uses uncertainty like a careful human scientist." “Temperature controls randomness." "In this experiment, temperature was held constant so the only independent variable was reasoning mode.”
 
-        “Temperature controls randomness. In this experiment, temperature was held constant so the only independent variable was reasoning mode.”
     )
 
 # ---------------------------------------------------------
