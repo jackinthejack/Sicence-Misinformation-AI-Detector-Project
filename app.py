@@ -497,6 +497,7 @@ else:
     over_q = 0
     over_r = 0
 
+    processed = 0
     rows = []
     for i in shared:
         truth = norm_label(CLAIMS[i]["answer"])
@@ -505,6 +506,7 @@ else:
 
         if not q_res or not r_res:
             continue
+        processed += 1
 
         pred_q = norm_label(majority(q_res))
         pred_r = norm_label(majority(r_res))
@@ -548,7 +550,10 @@ else:
             "reason_confidence_avg": round(mean_conf(r_res), 1),
         })
 
-    n = len(shared)
+    n = processed
+    if n == 0:
+        st.warning("No fully processed results yet. Run Judge Demo or Manual Experiment first.")
+        st.stop()
 
     acc_q = acc_q / n * 100
     acc_r = acc_r / n * 100
