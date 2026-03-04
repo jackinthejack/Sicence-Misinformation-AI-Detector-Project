@@ -487,24 +487,24 @@ else:
         st.warning("No completed comparisons yet. Run Judge Demo or Manual Experiment first.")
         st.stop()
 
-unc_truth_total = 0
-over_q = 0
-over_r = 0
+    unc_truth_total = 0
+    over_q = 0
+    over_r = 0
 
-for i in shared:
-    truth = norm_label(CLAIMS[i]["answer"])
-    pred_q = norm_label(majority(quick[i]))
-    pred_r = norm_label(majority(reason[i]))
+    for i in shared:
+        truth = norm_label(CLAIMS[i]["answer"])
+        pred_q = norm_label(majority(quick[i]))
+        pred_r = norm_label(majority(reason[i]))
 
-    if truth == "Uncertain":
-        unc_truth_total += 1
-        if pred_q != "Uncertain":
-            over_q += 1
-        if pred_r != "Uncertain":
-            over_r += 1
+        if truth == "Uncertain":
+            unc_truth_total += 1
+            if pred_q != "Uncertain":
+                over_q += 1
+            if pred_r != "Uncertain":
+                over_r += 1
 
-over_q = (over_q / unc_truth_total * 100) if unc_truth_total else 0.0
-over_r = (over_r / unc_truth_total * 100) if unc_truth_total else 0.0
+    over_q = (over_q / unc_truth_total * 100) if unc_truth_total else 0.0
+    over_r = (over_r / unc_truth_total * 100) if unc_truth_total else 0.0
 
     # Compute metrics
     acc_q = acc_r = 0
