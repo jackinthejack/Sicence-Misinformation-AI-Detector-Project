@@ -164,7 +164,7 @@ page=st.radio("",["How This Experiment Works","Experiment","Ask Your Own Questio
 # INSTRUCTIONS
 # -----------------------------------------------------
 
-if page=="How This Experiment Works by Jack Eckel":
+if page=="How This Experiment Works":
 
     st.header("AI Reliability Experiment By Jack Eckel - How This Experiment Works")
 
