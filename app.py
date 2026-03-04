@@ -502,39 +502,39 @@ else:
         truth = norm_label(CLAIMS[i]["answer"])
         q_res = quick[i]
         r_res = reason[i]
+
         pred_q = norm_label(majority(q_res))
         pred_r = norm_label(majority(r_res))
 
-    if truth == "Uncertain":
-        unc_truth_total += 1
-        if pred_q != "Uncertain":
-            over_q += 1
-        if pred_r != "Uncertain":
-            over_r += 1
-
-        if pred_q == truth:
-            acc_q += 1
-        if pred_r == truth:
-            acc_r += 1
-
-        if pred_q == "Uncertain":
-            unc_q += 1
-        if pred_r == "Uncertain":
-            unc_r += 1
-
-        ras_q += responsible_score(pred_q, truth)
-        ras_r += responsible_score(pred_r, truth)
-
+        # Overconfidence (count only when truth is Uncertain)
         if truth == "Uncertain":
+            unc_truth_total += 1
             if pred_q != "Uncertain":
                 over_q += 1
             if pred_r != "Uncertain":
                 over_r += 1
 
-        # only meaningful when multi-run was used; still safe:
+        # Accuracy
+        if pred_q == truth:
+            acc_q += 1
+        if pred_r == truth:
+            acc_r += 1
+
+        # Uncertainty rate
+        if pred_q == "Uncertain":
+            unc_q += 1
+        if pred_r == "Uncertain":
+            unc_r += 1
+
+        # Responsible Answer Score
+        ras_q += responsible_score(pred_q, truth)
+        ras_r += responsible_score(pred_r, truth)
+
+        # Consistency
         cons_q.append(consistency(q_res))
         cons_r.append(consistency(r_res))
 
+        # Row for table/export
         rows.append({
             "index": i + 1,
             "claim": CLAIMS[i]["text"],
