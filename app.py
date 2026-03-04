@@ -15,7 +15,7 @@ from openai import OpenAI
 st.set_page_config(page_title="AI Reliability Experiment", page_icon="🧪", layout="wide")
 
 st.title("AI Reliability Experiment by Jack Eckel")
-st.caption("Testing whether structured reasoning improves AI fact-checking reliability")
+st.caption("Testing whether structured reasoning improves AI fact-checking reliability by Jack Eckel")
 
 MODEL = "gpt-4o-mini"
 
@@ -162,7 +162,7 @@ def chart(title,values):
 
     fig,ax=plt.subplots(figsize=(4,3))
 
-    bars=ax.bar(["Quick Mode","Reasoning Mode"],values,color=[COLOR_QUICK,COLOR_REASON])
+    bars=ax.bar(["Quick","Reasoning"],values,color=[COLOR_QUICK,COLOR_REASON])
 
     for b in bars:
         ax.text(b.get_x()+b.get_width()/2,b.get_height(),f"{b.get_height():.1f}",ha='center')
@@ -170,6 +170,20 @@ def chart(title,values):
     ax.set_title(title)
 
     st.pyplot(fig)
+
+# ---------------------------------------------------------
+# RESPONSIBLE ANSWER SCORE
+# ---------------------------------------------------------
+
+def responsible_score(pred,truth):
+
+    if pred==truth:
+        return 1
+
+    if pred=="Uncertain":
+        return 0.5
+
+    return 0
 
 # ---------------------------------------------------------
 # NAVIGATION
@@ -205,20 +219,7 @@ it will be:
 
 • More accurate  
 • More consistent  
-• More likely to say **Uncertain** when information is ambiguous
-""")
-
-    st.subheader("Variables")
-
-    st.write("""
-Independent Variable  
-AI response style
-
-Dependent Variables  
-Accuracy  
-Consistency  
-Confidence  
-Uncertainty Rate
+• More willing to say **Uncertain** when information is ambiguous
 """)
 
     st.subheader("Why Uncertainty Matters")
@@ -226,9 +227,15 @@ Uncertainty Rate
     st.write("""
 Human scientists often say *"I'm not sure"* when evidence is unclear.
 
-AI systems that sometimes answer **Uncertain** may be behaving
-more like careful scientific thinkers rather than guessing.
+AI systems that sometimes answer **Uncertain** may behave more like
+careful scientific thinkers instead of guessing.
 """)
+
+    st.info(
+    "This experiment investigates whether structured reasoning allows AI systems "
+    "to behave more like careful human scientists by improving accuracy, "
+    "consistency, and responsible use of uncertainty."
+)
 
 # ---------------------------------------------------------
 # EXPERIMENT PAGE
@@ -270,100 +277,24 @@ elif page=="Experiment":
             c1,c2=st.columns(2)
 
             with c1:
-
                 st.subheader("Quick Mode")
-
                 st.write("Verdict:",badge(majority(q)))
                 st.write("Confidence:",round(statistics.mean([x.confidence for x in q]),1),"%")
-
                 st.markdown(q[0].raw)
 
             with c2:
-
                 st.subheader("Reasoning Mode")
-
                 st.write("Verdict:",badge(majority(r)))
                 st.write("Confidence:",round(statistics.mean([x.confidence for x in r]),1),"%")
-
                 st.markdown(r[0].raw)
 
             st.divider()
 
-    idx=st.session_state.claim_index
-
-    claim=CLAIMS[idx]["text"]
-
-    st.subheader(f"Manual Claim {idx+1}/20")
-
-    st.progress(idx/20)
-
-    st.write(claim)
-
-    col1,col2=st.columns(2)
-
-    if col1.button("Run Quick Mode"):
-        st.session_state.results["quick"][idx]=[ask_ai(claim,"quick") for _ in range(runs)]
-
-    if col2.button("Run Reasoning Mode"):
-        st.session_state.results["reason"][idx]=[ask_ai(claim,"reason") for _ in range(runs)]
-
-    q=st.session_state.results["quick"].get(idx)
-    r=st.session_state.results["reason"].get(idx)
-
-    if q or r:
-
-        c1,c2=st.columns(2)
-
-        if q:
-            with c1:
-                st.subheader("Quick Mode")
-                st.write("Verdict:",badge(majority(q)))
-                st.write("Confidence:",round(statistics.mean([x.confidence for x in q]),1),"%")
-                st.markdown(q[0].raw)
-
-        if r:
-            with c2:
-                st.subheader("Reasoning Mode")
-                st.write("Verdict:",badge(majority(r)))
-                st.write("Confidence:",round(statistics.mean([x.confidence for x in r]),1),"%")
-                st.markdown(r[0].raw)
-
-    if q and r:
-        if st.button("Next Claim"):
-            st.session_state.claim_index+=1
-
 # ---------------------------------------------------------
-# ASK PAGE
+# RESULTS DASHBOARD
 # ---------------------------------------------------------
 
-elif page=="Ask Your Own Question":
-
-    claim=st.text_input("Enter a science claim")
-
-    if st.button("Analyze"):
-
-        q=ask_ai(claim,"quick")
-        r=ask_ai(claim,"reason")
-
-        c1,c2=st.columns(2)
-
-        with c1:
-            st.subheader("Quick Mode")
-            st.write("Verdict:",badge(q.verdict))
-            st.write("Confidence:",q.confidence,"%")
-            st.markdown(q.raw)
-
-        with c2:
-            st.subheader("Reasoning Mode")
-            st.write("Verdict:",badge(r.verdict))
-            st.write("Confidence:",r.confidence,"%")
-            st.markdown(r.raw)
-
-# ---------------------------------------------------------
-# RESULTS PAGE
-# ---------------------------------------------------------
-
-else:
+elif page=="Results":
 
     quick=st.session_state.results["quick"]
     reason=st.session_state.results["reason"]
@@ -380,6 +311,10 @@ else:
     cons_r=[]
     unc_q=0
     unc_r=0
+    ras_q=0
+    ras_r=0
+    over_q=0
+    over_r=0
 
     for i in shared:
 
@@ -388,32 +323,42 @@ else:
         q=quick[i]
         r=reason[i]
 
-        if majority(q)==truth: acc_q+=1
-        if majority(r)==truth: acc_r+=1
+        pred_q=majority(q)
+        pred_r=majority(r)
+
+        if pred_q==truth: acc_q+=1
+        if pred_r==truth: acc_r+=1
+
+        ras_q+=responsible_score(pred_q,truth)
+        ras_r+=responsible_score(pred_r,truth)
+
+        if pred_q=="Uncertain": unc_q+=1
+        if pred_r=="Uncertain": unc_r+=1
+
+        if truth=="Uncertain":
+
+            if pred_q!="Uncertain":
+                over_q+=1
+
+            if pred_r!="Uncertain":
+                over_r+=1
 
         cons_q.append(consistency(q))
         cons_r.append(consistency(r))
-
-        if majority(q)=="Uncertain": unc_q+=1
-        if majority(r)=="Uncertain": unc_r+=1
 
     n=len(shared)
 
     acc_q=acc_q/n*100
     acc_r=acc_r/n*100
 
+    ras_q=ras_q/n*100
+    ras_r=ras_r/n*100
+
     unc_q=unc_q/n*100
     unc_r=unc_r/n*100
 
-    avg_conf_q=statistics.mean([
-        statistics.mean([x.confidence for x in quick[i]])
-        for i in shared
-    ])
-
-    avg_conf_r=statistics.mean([
-        statistics.mean([x.confidence for x in reason[i]])
-        for i in shared
-    ])
+    over_q=over_q/n*100
+    over_r=over_r/n*100
 
     st.header("Results Dashboard")
 
@@ -422,18 +367,10 @@ else:
     st.write(f"""
 Claims tested: **{n}**
 
-Quick Mode Accuracy: **{round(acc_q,1)}%**
-
-Reasoning Mode Accuracy: **{round(acc_r,1)}%**
-
 Accuracy improvement from reasoning: **{round(acc_r-acc_q,1)} percentage points**
-
-Reasoning Uncertainty Rate: **{round(unc_r,1)}%**
-
-Quick Mode Uncertainty Rate: **{round(unc_q,1)}%**
 """)
 
-    col1,col2=st.columns(2)
+    col1,col2,col3=st.columns(3)
 
     with col1:
         chart("Accuracy",[acc_q,acc_r])
@@ -441,30 +378,19 @@ Quick Mode Uncertainty Rate: **{round(unc_q,1)}%**
     with col2:
         chart("Consistency",[statistics.mean(cons_q),statistics.mean(cons_r)])
 
-    col3,col4=st.columns(2)
-
     with col3:
-        chart("Average Confidence",[avg_conf_q,avg_conf_r])
+        chart("Average Confidence",[
+            statistics.mean([statistics.mean([x.confidence for x in quick[i]]) for i in shared]),
+            statistics.mean([statistics.mean([x.confidence for x in reason[i]]) for i in shared])
+        ])
+
+    col4,col5,col6=st.columns(3)
 
     with col4:
         chart("Uncertainty Rate",[unc_q,unc_r])
 
-    report=f"""
-AI Reliability Experiment Report
+    with col5:
+        chart("Responsible Answer Score",[ras_q,ras_r])
 
-Claims Tested: {n}
-
-Quick Mode Accuracy: {acc_q:.1f}%
-Reasoning Mode Accuracy: {acc_r:.1f}%
-
-Reasoning improved accuracy by {acc_r-acc_q:.1f} percentage points.
-
-Reasoning Uncertainty Rate: {unc_r:.1f}%
-Quick Mode Uncertainty Rate: {unc_q:.1f}%
-"""
-
-    st.download_button(
-        "Download Printable Experiment Report",
-        report,
-        "experiment_report.txt"
-    )
+    with col6:
+        chart("Overconfidence Rate",[over_q,over_r])
