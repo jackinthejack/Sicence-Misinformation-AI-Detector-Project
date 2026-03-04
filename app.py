@@ -123,6 +123,15 @@ if "claim_index" not in st.session_state:
 # ---------------------------------------------------------
 # HELPERS
 # ---------------------------------------------------------
+def norm_label(x: str) -> str:
+    x = (x or "").strip().lower()
+    x = re.sub(r"[^\w]+$", "", x)  # strip trailing punctuation like "." or ")"
+    if x == "true":
+        return "True"
+    if x == "false":
+        return "False"
+    return "Uncertain"
+
 def badge(v: str) -> str:
     if v == "True":
         return "🟢 TRUE"
@@ -131,9 +140,9 @@ def badge(v: str) -> str:
     return "🟡 UNCERTAIN"
 
 def parse(txt: str):
-    v = re.search(r"VERDICT:\s*(True|False|Uncertain)", txt)
+    v = re.search(r"VERDICT:\s*(True|False|Uncertain)", txt, re.I)
     c = re.search(r"CONFIDENCE:\s*(\d+)", txt)
-    verdict = v.group(1) if v else "Uncertain"
+    verdict = v.group(1).capitalize() if v else "Uncertain"
     confidence = int(c.group(1)) if c else 50
     return verdict, confidence
 
@@ -169,12 +178,8 @@ def consistency(results):
     return votes.count(m) / len(votes) * 100
 
 def responsible_score(pred: str, truth: str) -> float:
-    """
-    Responsible Answer Score:
-    - correct = 1
-    - uncertain (when truth is known) = 0.5
-    - wrong = 0
-    """
+    pred = norm_label(pred)
+    truth = norm_label(truth)
     if pred == truth:
         return 1.0
     if pred == "Uncertain":
@@ -482,6 +487,25 @@ else:
         st.warning("No completed comparisons yet. Run Judge Demo or Manual Experiment first.")
         st.stop()
 
+unc_truth_total = 0
+over_q = 0
+over_r = 0
+
+for i in shared:
+    truth = norm_label(CLAIMS[i]["answer"])
+    pred_q = norm_label(majority(quick[i]))
+    pred_r = norm_label(majority(reason[i]))
+
+    if truth == "Uncertain":
+        unc_truth_total += 1
+        if pred_q != "Uncertain":
+            over_q += 1
+        if pred_r != "Uncertain":
+            over_r += 1
+
+over_q = (over_q / unc_truth_total * 100) if unc_truth_total else 0.0
+over_r = (over_r / unc_truth_total * 100) if unc_truth_total else 0.0
+
     # Compute metrics
     acc_q = acc_r = 0
     cons_q = []
@@ -492,11 +516,11 @@ else:
 
     rows = []
     for i in shared:
-        truth = CLAIMS[i]["answer"]
+        truth = norm_label(CLAIMS[i]["answer"])
         q_res = quick[i]
         r_res = reason[i]
-        pred_q = majority(q_res)
-        pred_r = majority(r_res)
+        pred_q = norm_label(majority(q_res))
+	pred_r = norm_label(majority(r_res))
 
         if pred_q == truth:
             acc_q += 1
