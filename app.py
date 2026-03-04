@@ -20,6 +20,12 @@ st.caption("Testing whether structured reasoning improves AI fact-checking relia
 MODEL = "gpt-4o-mini"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# --- Experiment settings (keep constant for fairness) ---
+TEMPERATURE = 0.35          
+TOP_P = 1.0                
+MAX_TOKENS_QUICK = 400     
+MAX_TOKENS_REASON = 900    
+
 # Keep visuals clean + readable (no seaborn dependency)
 plt.rcParams.update({
     "axes.grid": True,
@@ -63,6 +69,9 @@ CLAIMS = [
 SYSTEM = "You are a careful science fact checker."
 
 QUICK_PROMPT = """
+If the claim depends on definitions, missing context, or could reasonably be debated, answer Uncertain.
+Confidence should reflect scientific certainty, not how fluent the answer sounds.
+
 Return the answer in this exact format:
 
 VERDICT: <True|False|Uncertain>
@@ -74,6 +83,8 @@ Claim: "{claim}"
 
 REASON_PROMPT = """
 Think step-by-step and explain reasoning using bullet points.
+If the claim depends on definitions, missing context, or could reasonably be debated, answer Uncertain.
+Confidence should reflect scientific certainty, not how fluent the answer sounds.
 
 Return the answer in this exact format:
 
@@ -128,15 +139,23 @@ def parse(txt: str):
 
 def ask_ai(claim: str, mode: str) -> Result:
     prompt = QUICK_PROMPT if mode == "quick" else REASON_PROMPT
+
+    # Use different max_tokens for quick vs reasoning
+    max_tokens = MAX_TOKENS_QUICK if mode == "quick" else MAX_TOKENS_REASON
+
     with st.spinner("Analyzing claim with AI..."):
         r = client.chat.completions.create(
             model=MODEL,
+            temperature=TEMPERATURE,
+            top_p=TOP_P,
+            max_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": prompt.format(claim=claim)},
             ],
         )
-    txt = r.choices[0].message.content
+
+    txt = r.choices[0].message.content or ""
     v, c = parse(txt)
     return Result(v, c, txt)
 
@@ -293,6 +312,10 @@ if page == "Instructions":
     st.info(
         "Key idea: In science, 'I’m not sure' can be the most responsible answer. "
         "This experiment measures not just accuracy, but also whether the AI uses uncertainty like a careful human scientist."
+    )
+
+st.info(
+        “Temperature controls randomness. In this experiment, temperature was held constant so the only independent variable was reasoning mode.”
     )
 
 # ---------------------------------------------------------
@@ -638,6 +661,13 @@ OVERCONFIDENCE (Lower is better)
 CALIBRATION (Lower gap is better)
 - |Confidence - Accuracy| Quick: {cal_gap_q:.1f}
 - |Confidence - Accuracy| Reasoning: {cal_gap_r:.1f}
+
+SETTINGS (CONTROLLED VARIABLES)
+- Model: gpt-4o-mini
+- Temperature: 0.2
+- Top_p: 1.0
+- Max tokens (Quick): 400
+- Max tokens (Reasoning): 900
 
 INTERPRETATION
 Traditional accuracy counts 'Uncertain' as wrong, but in science, admitting uncertainty can be the most responsible response.
