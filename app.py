@@ -512,7 +512,6 @@ else:
     cons_r = []
     unc_q = unc_r = 0
     ras_q = ras_r = 0.0
-    over_q = over_r = 0
 
     rows = []
     for i in shared:
