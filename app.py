@@ -69,7 +69,7 @@ CLAIMS = [
     {"text":"If light travels through water instead of air, its wavelength stays exactly the same.","answer":"False"},
     {"text":"A higher pH value means a solution is more acidic.","answer":"False"},
     {"text":"Viruses are considered living organisms.","answer":"Uncertain"},
-    {"text":"Pluto is a planet.","answer":"Uncertain"},
+    {"text":"Toilets flush clockwise in Australia.","answer":"False"},
     {"text":"Glass is a solid.","answer":"Uncertain"},
 ]
 
