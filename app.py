@@ -281,7 +281,7 @@ page = st.radio("", ["Instructions", "Experiment", "Ask Your Own Question", "Res
 # INSTRUCTIONS PAGE
 # ---------------------------------------------------------
 if page == "Instructions":
-    st.header("How to Run This Experiment (for Judges + Jack)")
+    st.header("How to Run This Experiment")
 
     colA, colB = st.columns(2)
     with colA:
