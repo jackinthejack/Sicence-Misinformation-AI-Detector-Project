@@ -204,7 +204,9 @@ Responsible Score – rewards correct uncertainty
 Overconfidence – when AI should say uncertain but doesn't
 """)
 
-    st.info("The goal is to test whether structured reasoning produces more reliable scientific answers.")
+    st.info("This experiment investigates whether structured reasoning allows AI systems "
+    "to behave more like careful human scientists by improving accuracy, "
+    "consistency, and responsible use of uncertainty.")
 
 # ---------------------------------------------------------
 # EXPERIMENT
