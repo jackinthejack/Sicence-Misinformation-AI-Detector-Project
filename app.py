@@ -15,7 +15,7 @@ from openai import OpenAI
 st.set_page_config(page_title="AI Reliability Experiment", page_icon="🧪", layout="wide")
 
 st.title("AI Reliability Experiment by Jack Eckel")
-st.caption("Testing whether structured reasoning improves AI fact-checking reliability by Jack Eckel")
+st.caption("Testing whether structured reasoning improves AI fact-checking reliability")
 
 MODEL = "gpt-4o-mini"
 
@@ -114,13 +114,11 @@ def parse(txt):
 
     v=re.search(r"VERDICT:\s*(True|False|Uncertain)",txt)
     c=re.search(r"CONFIDENCE:\s*(\d+)",txt)
-    e=re.search(r"EXPLANATION:\s*(.*)",txt)
 
     verdict=v.group(1) if v else "Uncertain"
     confidence=int(c.group(1)) if c else 50
-    explanation=e.group(1) if e else ""
 
-    return verdict,confidence,explanation
+    return verdict,confidence
 
 def ask_ai(claim,mode):
 
@@ -138,9 +136,9 @@ def ask_ai(claim,mode):
 
     txt=r.choices[0].message.content
 
-    v,c,e=parse(txt)
+    v,c=parse(txt)
 
-    return Result(v,c,e,txt)
+    return Result(v,c,"",txt)
 
 # ---------------------------------------------------------
 # HELPERS
@@ -159,10 +157,6 @@ def badge(v):
     if v=="True": return "🟢 TRUE"
     if v=="False": return "🔴 FALSE"
     return "🟡 UNCERTAIN"
-
-# ---------------------------------------------------------
-# CHART FUNCTION
-# ---------------------------------------------------------
 
 def chart(title,values):
 
@@ -189,26 +183,52 @@ page=st.radio("",["How This Experiment Works","Experiment","Ask Your Own Questio
 
 if page=="How This Experiment Works":
 
-    st.header("AI Reliability Experiment by Jack Eckel - How This Experiment Works")
+    st.header("How the AI Reliability Experiment Works")
 
     st.write("""
 This experiment tests whether **structured reasoning improves AI fact-checking reliability**.
-
-Quick Mode: the AI answers immediately.
-
-Reasoning Mode: the AI performs step-by-step reasoning before answering.
 """)
+
+    st.subheader("Two AI Response Modes")
 
     st.write("""
-Metrics measured:
+Quick Mode – AI answers immediately.
 
-• Accuracy  
-• Confidence  
-• Consistency across runs  
-• Uncertainty rate
+Reasoning Mode – AI performs step-by-step reasoning first.
 """)
 
-    st.info("This experiment demonstrates that reasoning-based AI systems may produce more reliable results than immediate responses.")
+    st.subheader("Hypothesis")
+
+    st.write("""
+If AI performs structured reasoning before answering,
+it will be:
+
+• More accurate  
+• More consistent  
+• More likely to say **Uncertain** when information is ambiguous
+""")
+
+    st.subheader("Variables")
+
+    st.write("""
+Independent Variable  
+AI response style
+
+Dependent Variables  
+Accuracy  
+Consistency  
+Confidence  
+Uncertainty Rate
+""")
+
+    st.subheader("Why Uncertainty Matters")
+
+    st.write("""
+Human scientists often say *"I'm not sure"* when evidence is unclear.
+
+AI systems that sometimes answer **Uncertain** may be behaving
+more like careful scientific thinkers rather than guessing.
+""")
 
 # ---------------------------------------------------------
 # EXPERIMENT PAGE
@@ -250,16 +270,24 @@ elif page=="Experiment":
             c1,c2=st.columns(2)
 
             with c1:
-                st.write("Quick Mode",badge(majority(q)))
+
+                st.subheader("Quick Mode")
+
+                st.write("Verdict:",badge(majority(q)))
+                st.write("Confidence:",round(statistics.mean([x.confidence for x in q]),1),"%")
+
                 st.markdown(q[0].raw)
 
             with c2:
-                st.write("Reasoning Mode",badge(majority(r)))
+
+                st.subheader("Reasoning Mode")
+
+                st.write("Verdict:",badge(majority(r)))
+                st.write("Confidence:",round(statistics.mean([x.confidence for x in r]),1),"%")
+
                 st.markdown(r[0].raw)
 
             st.divider()
-
-    # manual experiment
 
     idx=st.session_state.claim_index
 
@@ -282,13 +310,23 @@ elif page=="Experiment":
     q=st.session_state.results["quick"].get(idx)
     r=st.session_state.results["reason"].get(idx)
 
-    if q:
-        st.write("Quick Mode",badge(majority(q)))
-        st.markdown(q[0].raw)
+    if q or r:
 
-    if r:
-        st.write("Reasoning Mode",badge(majority(r)))
-        st.markdown(r[0].raw)
+        c1,c2=st.columns(2)
+
+        if q:
+            with c1:
+                st.subheader("Quick Mode")
+                st.write("Verdict:",badge(majority(q)))
+                st.write("Confidence:",round(statistics.mean([x.confidence for x in q]),1),"%")
+                st.markdown(q[0].raw)
+
+        if r:
+            with c2:
+                st.subheader("Reasoning Mode")
+                st.write("Verdict:",badge(majority(r)))
+                st.write("Confidence:",round(statistics.mean([x.confidence for x in r]),1),"%")
+                st.markdown(r[0].raw)
 
     if q and r:
         if st.button("Next Claim"):
@@ -310,11 +348,15 @@ elif page=="Ask Your Own Question":
         c1,c2=st.columns(2)
 
         with c1:
-            st.write("Quick Mode",badge(q.verdict))
+            st.subheader("Quick Mode")
+            st.write("Verdict:",badge(q.verdict))
+            st.write("Confidence:",q.confidence,"%")
             st.markdown(q.raw)
 
         with c2:
-            st.write("Reasoning Mode",badge(r.verdict))
+            st.subheader("Reasoning Mode")
+            st.write("Verdict:",badge(r.verdict))
+            st.write("Confidence:",r.confidence,"%")
             st.markdown(r.raw)
 
 # ---------------------------------------------------------
@@ -336,6 +378,8 @@ else:
     acc_r=0
     cons_q=[]
     cons_r=[]
+    unc_q=0
+    unc_r=0
 
     for i in shared:
 
@@ -350,12 +394,30 @@ else:
         cons_q.append(consistency(q))
         cons_r.append(consistency(r))
 
+        if majority(q)=="Uncertain": unc_q+=1
+        if majority(r)=="Uncertain": unc_r+=1
+
     n=len(shared)
 
     acc_q=acc_q/n*100
     acc_r=acc_r/n*100
 
+    unc_q=unc_q/n*100
+    unc_r=unc_r/n*100
+
+    avg_conf_q=statistics.mean([
+        statistics.mean([x.confidence for x in quick[i]])
+        for i in shared
+    ])
+
+    avg_conf_r=statistics.mean([
+        statistics.mean([x.confidence for x in reason[i]])
+        for i in shared
+    ])
+
     st.header("Results Dashboard")
+
+    st.subheader("Experiment Summary")
 
     st.write(f"""
 Claims tested: **{n}**
@@ -364,7 +426,11 @@ Quick Mode Accuracy: **{round(acc_q,1)}%**
 
 Reasoning Mode Accuracy: **{round(acc_r,1)}%**
 
-Accuracy improvement: **{round(acc_r-acc_q,1)} percentage points**
+Accuracy improvement from reasoning: **{round(acc_r-acc_q,1)} percentage points**
+
+Reasoning Uncertainty Rate: **{round(unc_r,1)}%**
+
+Quick Mode Uncertainty Rate: **{round(unc_q,1)}%**
 """)
 
     col1,col2=st.columns(2)
@@ -375,6 +441,14 @@ Accuracy improvement: **{round(acc_r-acc_q,1)} percentage points**
     with col2:
         chart("Consistency",[statistics.mean(cons_q),statistics.mean(cons_r)])
 
+    col3,col4=st.columns(2)
+
+    with col3:
+        chart("Average Confidence",[avg_conf_q,avg_conf_r])
+
+    with col4:
+        chart("Uncertainty Rate",[unc_q,unc_r])
+
     report=f"""
 AI Reliability Experiment Report
 
@@ -384,6 +458,9 @@ Quick Mode Accuracy: {acc_q:.1f}%
 Reasoning Mode Accuracy: {acc_r:.1f}%
 
 Reasoning improved accuracy by {acc_r-acc_q:.1f} percentage points.
+
+Reasoning Uncertainty Rate: {unc_r:.1f}%
+Quick Mode Uncertainty Rate: {unc_q:.1f}%
 """
 
     st.download_button(
