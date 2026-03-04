@@ -21,7 +21,7 @@ MODEL = "gpt-4o-mini"
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- Experiment settings (keep constant for fairness) ---
-TEMPERATURE = 0.35          
+TEMPERATURE = 0.25          
 TOP_P = 1.0                
 MAX_TOKENS_QUICK = 400     
 MAX_TOKENS_REASON = 900    
