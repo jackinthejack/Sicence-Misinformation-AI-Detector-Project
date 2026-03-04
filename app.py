@@ -49,6 +49,16 @@ CLAIMS = [
     {"text":"If a plant is placed in the dark, it immediately stops cellular respiration.","answer":"False"},
     {"text":"In space, a rocket must continuously fire its engines to keep moving forward.","answer":"False"},
     {"text":"If two chemicals react and temperature decreases, the reaction cannot be exothermic.","answer":"True"},
+    {"text":"If you drill a straight tunnel through Earth and drop a ball in (ignoring air resistance and Earth’s rotation), it will oscillate back and forth and eventually come to rest at Earth’s center.","answer":"True"},
+    {"text":"On a clear night, you can see sunlight reflected off the Moon that is about one million times dimmer than sunlight reflected off a white wall at the same distance.","answer":"Uncertain"},
+    {"text":"If the Sun suddenly disappeared, Earth would continue orbiting for about 8 minutes before flying off.","answer":"True"},
+    {"text":"In a vacuum, a feather and a bowling ball fall at the same acceleration because gravity ‘pulls equally’ on all objects.","answer":"False"},
+    {"text":"A helium balloon rises because helium has negative weight.","answer":"False"},
+    {"text":"At the same temperature, a gas with heavier molecules moves slower on average than a gas with lighter molecules.","answer":"True"},
+    {"text":"If you double the absolute temperature (in Kelvin) of an ideal gas at constant volume, its pressure doubles.","answer":"True"},
+    {"text":"If you put a sealed plastic bottle filled with air into a freezer, it will weigh less after it cools.","answer":"False"},
+    {"text":"A perfectly black object is always a perfect absorber and a perfect emitter of radiation at the same wavelength.","answer":"True"},
+    {"text":"If you mix two equal volumes of water at 20°C and 40°C, the final temperature will be exactly 30°C.","answer":"Uncertain"},
     {"text":"If you increase the speed of a moving object, its kinetic energy increases linearly.","answer":"False"},
     {"text":"A metal object and a wooden object of the same mass will experience the same gravitational force near Earth’s surface.","answer":"True"},
     {"text":"If Earth had no atmosphere, the sky would appear blue during the day.","answer":"False"},
@@ -298,7 +308,7 @@ if page == "Instructions":
             "How to Demo in 60 Seconds",
             "<ol>"
             "<li>Go to <b>Experiment</b>.</li>"
-            "<li>Click <b>Run 5 Random Claims (Judge Demo)</b>.</li>"
+            "<li>Click <b>Run 10 Random Claims (Demo)</b>.</li>"
             "<li>Point out Quick vs Reasoning differences in verdict, confidence, and reasoning bullets.</li>"
             "<li>Go to <b>Results</b> to show charts and the Responsible Answer Score.</li>"
             "</ol>"
@@ -343,13 +353,13 @@ elif page == "Experiment":
     st.divider()
 
     # -----------------------
-    # JUDGE DEMO MODE
+    # DEMO MODE
     # -----------------------
-    st.subheader("Judge Demo Mode (5 Random Claims)")
-    st.caption("One-click demo for judges. Runs 5 random claims and shows Quick vs Reasoning.")
+    st.subheader("Demo Mode (10 Random Claims)")
+    st.caption("One-click demo. Runs 10 random claims and shows Quick vs Reasoning.")
 
-    if st.button("Run 5 Random Claims (Judge Demo)"):
-        sample_idxs = random.sample(range(len(CLAIMS)), 5)
+    if st.button("Run 10 Random Claims (Demo)"):
+        sample_idxs = random.sample(range(len(CLAIMS)), 10)
         st.session_state.judge_last_run = sample_idxs
 
         prog = st.progress(0)
@@ -357,9 +367,9 @@ elif page == "Experiment":
             claim = CLAIMS[i]["text"]
             st.session_state.results["quick"][i] = [ask_ai(claim, "quick") for _ in range(runs)]
             st.session_state.results["reason"][i] = [ask_ai(claim, "reason") for _ in range(runs)]
-            prog.progress(k / 5)
+            prog.progress(k / 10)
 
-    # Display judge results (always show if available)
+    # Display demo results (always show if available)
     if st.session_state.judge_last_run:
         for i in st.session_state.judge_last_run:
             claim = CLAIMS[i]["text"]
@@ -484,7 +494,7 @@ else:
     shared = sorted(set(quick) & set(reason))
 
     if not shared:
-        st.warning("No completed comparisons yet. Run Judge Demo or Manual Experiment first.")
+        st.warning("No completed comparisons yet. Run Demo or Manual Experiment first.")
         st.stop()
 
     # Compute metrics
@@ -552,7 +562,7 @@ else:
 
     n = processed
     if n == 0:
-        st.warning("No fully processed results yet. Run Judge Demo or Manual Experiment first.")
+        st.warning("No fully processed results yet. Run Demo or Manual Experiment first.")
         st.stop()
 
     acc_q = acc_q / n * 100
