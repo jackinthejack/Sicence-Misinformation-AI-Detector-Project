@@ -11,7 +11,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 from openai import OpenAI
 
-st.set_page_config(page_title="AI Reliability Experiment by Jack Eckel", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="AI Reliability Experiment", page_icon="🧪", layout="wide")
 
 st.title("AI Reliability Experiment by Jack Eckel")
 st.caption("Testing whether structured reasoning improves AI fact-checking reliability by Jack Eckel")
