@@ -519,7 +519,7 @@ else:
         q_res = quick[i]
         r_res = reason[i]
         pred_q = norm_label(majority(q_res))
-	pred_r = norm_label(majority(r_res))
+        pred_r = norm_label(majority(r_res))
 
         if pred_q == truth:
             acc_q += 1
